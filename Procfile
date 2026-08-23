@@ -1,1 +1,1 @@
-worker: python krepbot.py
+web: gunicorn krepbot:app
