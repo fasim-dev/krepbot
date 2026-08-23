@@ -1,8 +1,6 @@
 # ========================================
-# KRUSTY KRAB TRADING BOT - ENHANCED VERSION
-# XAU/USD (EXNESS) | BTC | ETH | FOREX MAJOR
-# TIMEFRAME: 5M, 15M, 1H, 4H
-# DENGAN SUPPORT/RESISTANCE, AUTO CLOSE, NOTIFIKASI
+# KRUSTY KRAB TRADING BOT - ENHANCED v13.0
+# DENGAN TOMBOL INTERAKTIF + AUTO SIGNAL
 # FILE: krepbot.py
 # ========================================
 
@@ -35,9 +33,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 print("="*60)
-print("🏦 KRUSTY KRAB TRADING BOT - ENHANCED v12.0")
-print("📊 XAU/USD (EXNESS) | BTC | ETH | FOREX MAJOR")
-print("📊 TIMEFRAME: 5M | 15M | 1H | 4H")
+print("🏦 KRUSTY KRAB TRADING BOT - ENHANCED v13.0")
+print("📊 DENGAN TOMBOL INTERAKTIF")
 print(f"🤖 Bot: @krepXau_bot")
 print("="*60)
 
@@ -329,7 +326,7 @@ def analyze_fundamental(ticker, name, price):
         return None
 
 # ========================================
-# FUNGSI ANALISIS UTAMA ENHANCED
+# FUNGSI ANALISIS ENHANCED
 # ========================================
 def analyze_asset_enhanced(ticker, name, timeframe="1h"):
     try:
@@ -355,7 +352,7 @@ def analyze_asset_enhanced(ticker, name, timeframe="1h"):
             logger.warning(f"⚠️ Data kosong untuk {name}")
             return None
 
-        # ===== INDIKATOR TEKNIKAL LENGKAP =====
+        # ===== INDIKATOR TEKNIKAL =====
         df['RSI'] = ta.momentum.RSIIndicator(df['Close'], window=14).rsi()
         df['MACD'] = ta.trend.MACD(df['Close']).macd()
         df['MACD_signal'] = ta.trend.MACD(df['Close']).macd_signal()
@@ -550,44 +547,153 @@ ASSETS = [
 selected_timeframe = "1h"
 
 # ========================================
-# KIRIM SINYAL ENHANCED
+# GET UPDATES (LONG POLLING)
 # ========================================
-def kirim_sinyal_enhanced():
-    """Kirim sinyal lengkap dengan semua fitur"""
-    logger.info("📊 Mengirim sinyal enhanced...")
-    close_expired_signals()
+def get_updates(offset=None):
+    url = f"{BOT_URL}/getUpdates"
+    params = {'timeout': 30, 'offset': offset}
+    try:
+        response = requests.get(url, params=params, timeout=35)
+        return response.json()
+    except Exception as e:
+        logger.error(f"get_updates error: {e}")
+        return None
+
+# ========================================
+# MENU UTAMA DENGAN TOMBOL
+# ========================================
+def send_menu(message_id=None):
+    keyboard = [
+        [{"text": "⏰ TIMEFRAME", "callback_data": "tf"}],
+        [{"text": "🥇 XAU/USD", "callback_data": "xau"}, {"text": "🪙 BTC/USD", "callback_data": "btc"}],
+        [{"text": "⚡ ETH/USD", "callback_data": "eth"}, {"text": "💶 EUR/USD", "callback_data": "eur"}],
+        [{"text": "💷 GBP/USD", "callback_data": "gbp"}, {"text": "💴 USD/JPY", "callback_data": "usd"}],
+        [{"text": "🇦🇺 AUD/USD", "callback_data": "aud"}, {"text": "🇨🇦 USD/CAD", "callback_data": "cad"}],
+        [{"text": "📊 SEMUA SINYAL", "callback_data": "all"}, {"text": "📈 PERFORMANCE", "callback_data": "perf"}],
+    ]
     
-    # Header
-    header = f"""
+    msg = f"""
 ╔═══════════════════════════════════════╗
 ║   🏦  KRUSTY KRAB TRADING BOT         ║
 ║   "Printing Money Since 2026"         ║
-║   ENHANCED v12.0                      ║
+║   ENHANCED v13.0 - DENGAN TOMBOL      ║
 ╚═══════════════════════════════════════╝
 
-📊 <b>SINYAL TRADING ENHANCED</b>
-⏰ {datetime.now().strftime('%Y-%m-%d %H:%M')} WIB
-📊 12+ Indikator | AI-Powered Scoring
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 <b>PILIH ASET:</b>
+⏰ Timeframe: <b>{selected_timeframe}</b>
+
+🥇 <b>XAU/USD</b> - Exness (Emas)
+🪙 <b>BTC/USD</b> - Bitcoin
+⚡ <b>ETH/USD</b> - Ethereum
+
+💶 <b>EUR/USD</b> - Euro
+💷 <b>GBP/USD</b> - Pound
+💴 <b>USD/JPY</b> - Yen
+🇦🇺 <b>AUD/USD</b> - Aussie
+🇨🇦 <b>USD/CAD</b> - Loonie
+
+📊 <b>Fitur:</b>
+• 12+ Indikator Teknikal
+• AI-Powered Scoring
+• 3 Level TP
+• Support & Resistance
+• Fundamental Analysis
+• Performance Tracker
 """
-    send_message(header)
-    time.sleep(1)
+    if message_id:
+        edit_message(message_id, msg, keyboard)
+    else:
+        send_message(msg, keyboard)
+
+# ========================================
+# HANDLE CALLBACK (TOMbol)
+# ========================================
+def handle_callback(callback_id, message_id, data):
+    global selected_timeframe
+    answer_callback(callback_id)
+    logger.info(f"📥 Callback: {data}")
     
-    for asset in ASSETS[:3]:  # Kirim 3 aset utama
-        result = analyze_asset_enhanced(asset['ticker'], asset['name'], selected_timeframe)
-        if not result:
-            send_message(f"❌ Gagal analisis {asset['name']}")
-            continue
+    # === TIMEFRAME ===
+    if data == "tf":
+        keyboard = [
+            [{"text": "🕐 5 Menit", "callback_data": "tf_5m"}, {"text": "🕐 15 Menit", "callback_data": "tf_15m"}],
+            [{"text": "🕐 1 Jam", "callback_data": "tf_1h"}, {"text": "🕐 4 Jam", "callback_data": "tf_4h"}],
+            [{"text": "🔙 Kembali", "callback_data": "menu"}],
+        ]
+        edit_message(message_id, f"⏰ Pilih Timeframe:\nSaat ini: {selected_timeframe}", keyboard)
+        return
+    
+    if data in ["tf_5m", "tf_15m", "tf_1h", "tf_4h"]:
+        tf_map = {"tf_5m": "5m", "tf_15m": "15m", "tf_1h": "1h", "tf_4h": "4h"}
+        selected_timeframe = tf_map[data]
+        edit_message(message_id, f"✅ Timeframe: {selected_timeframe}")
+        send_menu(message_id)
+        return
+    
+    if data == "menu":
+        send_menu(message_id)
+        return
+    
+    # === PERFORMANCE ===
+    if data == "perf":
+        close_expired_signals()
+        total, per_asset = get_performance()
+        total_signals, wins, losses, total_profit = total
+        winrate = round((wins / (wins + losses)) * 100, 1) if (wins + losses) > 0 else 0
         
-        alasan_text = "\n".join([f"   ✅ {a}" for a in result['alasan']])
         msg = f"""
+📊 <b>PERFORMANCE TRACKER</b>
+━━━━━━━━━━━━━━━━━━━━━
+
+📈 Total: {total_signals or 0} sinyal
+✅ Win: {wins or 0} | ❌ Loss: {losses or 0}
+🏆 Winrate: <b>{winrate}%</b>
+💰 Profit: <b>${total_profit or 0:,.2f}</b>
+
+📊 <b>PER ASET:</b>
+"""
+        for asset, total, win, loss, profit in per_asset:
+            asset_winrate = round((win / total) * 100, 1) if total > 0 else 0
+            msg += f"\n{asset}: {total} sinyal | {asset_winrate}% | ${profit or 0:,.2f}"
+        
+        keyboard = [[{"text": "🔙 Kembali", "callback_data": "menu"}]]
+        edit_message(message_id, msg, keyboard)
+        return
+    
+    # === SEMUA SINYAL ===
+    if data == "all":
+        edit_message(message_id, "📊 Mengirim semua sinyal...")
+        kirim_semua_sinyal(message_id)
+        return
+    
+    # === ASSET ANALYSIS ===
+    asset_map = {
+        'xau': {'ticker': 'XAUUSD=X', 'name': '🥇 XAU/USD (Exness)'},
+        'btc': {'ticker': 'BTC-USD', 'name': '🪙 BTC/USD'},
+        'eth': {'ticker': 'ETH-USD', 'name': '⚡ ETH/USD'},
+        'eur': {'ticker': 'EURUSD=X', 'name': '💶 EUR/USD'},
+        'gbp': {'ticker': 'GBPUSD=X', 'name': '💷 GBP/USD'},
+        'usd': {'ticker': 'USDJPY=X', 'name': '💴 USD/JPY'},
+        'aud': {'ticker': 'AUDUSD=X', 'name': '🇦🇺 AUD/USD'},
+        'cad': {'ticker': 'USDCAD=X', 'name': '🇨🇦 USD/CAD'},
+    }
+    
+    if data in asset_map:
+        asset = asset_map[data]
+        edit_message(message_id, f"📥 Menganalisis {asset['name']} ({selected_timeframe})...")
+        
+        result = analyze_asset_enhanced(asset['ticker'], asset['name'], selected_timeframe)
+        
+        if result:
+            alasan_text = "\n".join([f"   ✅ {a}" for a in result['alasan']])
+            msg = f"""
 <b>{result['name']}</b>
 💰 Harga: <b>${result['price']:,.2f}</b>
 ⏰ Timeframe: <b>{result['timeframe']}</b>
 
 🎯 <b>SINYAL: {result['sinyal']}</b>
 📊 Konfidensi: {result['confidence']}%
-📊 Skor BUY/SELL: {result['skor_buy']}/{result['skor_sell']}
+📊 Skor: {result['skor_buy']}/{result['skor_sell']}
 
 📌 <b>Alasan:</b>
 {alasan_text}
@@ -595,7 +701,7 @@ def kirim_sinyal_enhanced():
 {result['fundamental']}
 {result['sr_text']}
 
-⚡ <b>TRADING LEVELS:</b>
+⚡ <b>LEVEL EXNESS:</b>
 📍 Entry: ${result['entry']:,.2f}
 🛑 SL: ${result['sl']:,.2f} ({abs(result['sl']/result['entry']-1)*100:.2f}%)
 🎯 TP1: ${result['tp1']:,.2f} (R:R 1:1.5)
@@ -616,65 +722,144 @@ def kirim_sinyal_enhanced():
 • Fib 61.8%: ${result['fib_618']:,.2f}
 • Fib 38.2%: ${result['fib_382']:,.2f}
 ━━━━━━━━━━━━━━━━━━━━━
+⚠️ Bukan nasihat keuangan
+💡 Gunakan untuk referensi
 """
-        send_message(msg)
-        time.sleep(1.5)
+            keyboard = [[{"text": "🔙 Kembali", "callback_data": "menu"}]]
+            edit_message(message_id, msg, keyboard)
+        else:
+            edit_message(message_id, f"❌ Gagal analisis {asset['name']}")
+
+# ========================================
+# KIRIM SEMUA SINYAL
+# ========================================
+def kirim_semua_sinyal(message_id):
+    msg = f"📊 <b>SEMUA SINYAL</b> (Timeframe: {selected_timeframe})\n━━━━━━━━━━━━━━━━━━━━━\n"
     
-    # Footer + Performance
-    total, per_asset = get_performance()
-    total_signals, wins, losses, total_profit = total
-    winrate = round((wins / (wins + losses)) * 100, 1) if (wins + losses) > 0 else 0
+    for asset in ASSETS:
+        result = analyze_asset_enhanced(asset['ticker'], asset['name'], selected_timeframe)
+        if result:
+            msg += f"""
+{result['name']}
+💰 ${result['price']:,.2f}
+🎯 {result['sinyal']} ({result['confidence']}%)
+📍 Entry: ${result['entry']:,.2f}
+🛑 SL: ${result['sl']:,.2f}
+🎯 TP: ${result['tp1']:,.2f} | ${result['tp2']:,.2f}
+━━━━━━━━━━━━━━━━━━━━━
+"""
+        time.sleep(0.5)
     
-    footer = f"""
+    keyboard = [[{"text": "🔙 Kembali", "callback_data": "menu"}]]
+    edit_message(message_id, msg, keyboard)
+
+# ========================================
+# AUTO SIGNAL (SETIAP 4 JAM)
+# ========================================
+def kirim_auto_signal():
+    logger.info("📢 Mengirim auto signal...")
+    close_expired_signals()
+    
+    main_assets = [
+        {"ticker": "XAUUSD=X", "name": "🥇 XAU/USD (Exness)"},
+        {"ticker": "BTC-USD", "name": "🪙 BTC/USD"},
+        {"ticker": "ETH-USD", "name": "⚡ ETH/USD"},
+    ]
+    
+    msg = f"""
 ╔═══════════════════════════════════════╗
-║   📊  PERFORMANCE TRACKER             ║
+║   🔔 NOTIFIKASI OTOMATIS              ║
+║   ⏰ {datetime.now().strftime('%Y-%m-%d %H:%M')} WIB  ║
 ╚═══════════════════════════════════════╝
 
-📈 Total Sinyal: {total_signals or 0}
-✅ Win: {wins or 0} | ❌ Loss: {losses or 0}
-🏆 Winrate: <b>{winrate}%</b>
-💰 Profit: <b>${total_profit or 0:,.2f}</b>
-
-📊 <b>PER ASET:</b>
+📊 <b>SINYAL HARIAN</b>
+⏰ Timeframe: <b>{selected_timeframe}</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-    for asset, total, win, loss, profit in per_asset:
-        asset_winrate = round((win / total) * 100, 1) if total > 0 else 0
-        footer += f"\n{asset}: {total} sinyal | {asset_winrate}% | ${profit or 0:,.2f}"
+    send_message(msg)
+    time.sleep(1)
+    
+    for asset in main_assets:
+        result = analyze_asset_enhanced(asset['ticker'], asset['name'], selected_timeframe)
+        if result:
+            alasan_text = "\n".join([f"   ✅ {a}" for a in result['alasan']])
+            msg = f"""
+<b>{result['name']}</b>
+💰 Harga: <b>${result['price']:,.2f}</b>
+🎯 <b>SINYAL: {result['sinyal']}</b>
+📊 Konfidensi: {result['confidence']}%
 
-    footer += """
+📌 Alasan:
+{alasan_text}
 
+📍 Entry: ${result['entry']:,.2f}
+🛑 SL: ${result['sl']:,.2f}
+🎯 TP1: ${result['tp1']:,.2f}
+🎯 TP2: ${result['tp2']:,.2f}
 ━━━━━━━━━━━━━━━━━━━━━
-⚠️ <b>DISCLAIMER:</b>
-Ini hanya analisis teknikal, BUKAN nasihat keuangan.
-
-💡 <b>Tips:</b>
-• Risk/reward minimal 1:2
-• Jangan risk > 2% per trade
 """
-    send_message(footer)
-    logger.info("✅ Selesai!")
+            send_message(msg)
+            time.sleep(1.5)
 
 # ========================================
 # MAIN
 # ========================================
 def main():
-    logger.info("🤖 KRUSTY KRAB TRADING BOT - ENHANCED v12.0 STARTED")
-    logger.info("📊 8 ASET | 4 TIMEFRAME | 12+ INDIKATOR")
+    logger.info("🤖 KRUSTY KRAB TRADING BOT - ENHANCED v13.0 STARTED")
+    logger.info("📊 DENGAN TOMBOL INTERAKTIF")
     
-    # Kirim sinyal pertama
-    kirim_sinyal_enhanced()
+    # Kirim menu pertama
+    send_menu()
     
-    # Loop setiap 4 jam
+    # Auto signal setiap 4 jam (di thread terpisah)
+    def auto_signal_loop():
+        while True:
+            time.sleep(14400)  # 4 jam
+            try:
+                kirim_auto_signal()
+            except Exception as e:
+                logger.error(f"Auto signal error: {e}")
+    
+    threading.Thread(target=auto_signal_loop, daemon=True).start()
+    
+    # Loop utama untuk menangani callback
+    last_update_id = None
     while True:
         try:
-            time.sleep(14400)  # 4 jam
-            kirim_sinyal_enhanced()
+            updates = get_updates(last_update_id)
+            if updates and updates.get('ok'):
+                for update in updates.get('result', []):
+                    last_update_id = update['update_id'] + 1
+                    
+                    if 'message' in update:
+                        chat_id = str(update['message']['chat']['id'])
+                        text = update['message'].get('text', '')
+                        if chat_id == CHAT_ID:
+                            if text == '/start':
+                                send_menu()
+                            else:
+                                send_message("❓ Kirim /start untuk menu")
+                    
+                    elif 'callback_query' in update:
+                        callback = update['callback_query']
+                        chat_id = str(callback['message']['chat']['id'])
+                        if chat_id == CHAT_ID:
+                            try:
+                                handle_callback(
+                                    callback['id'],
+                                    callback['message']['message_id'],
+                                    callback['data']
+                                )
+                            except Exception as e:
+                                logger.error(f"Callback error: {e}")
+                                answer_callback(callback['id'], "Error, coba lagi")
+            time.sleep(2)
         except KeyboardInterrupt:
             logger.info("👋 Bot stopped")
             break
         except Exception as e:
-            logger.error(f"Error: {e}")
-            time.sleep(60)
+            logger.error(f"Main error: {e}")
+            time.sleep(5)
 
 if __name__ == "__main__":
     main()
