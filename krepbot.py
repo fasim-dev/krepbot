@@ -1,6 +1,7 @@
 # ========================================
-# KRUSTY KRAB TRADING BOT - ENHANCED v6.0
-# DEPLOY VERSION
+# KRUSTY KRAB TRADING BOT - FULL EDITION
+# XAU/USD (EXNESS) | BTC, ETH | FOREX MAJOR
+# TIMEFRAME: 5M, 15M, 1H, 4H
 # ========================================
 
 import os
@@ -15,29 +16,25 @@ from datetime import datetime, timedelta
 import logging
 
 # ========================================
-# KONFIGURASI - AMBIL DARI ENVIRONMENT
+# KONFIGURASI
 # ========================================
 TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 if not TOKEN:
-    TOKEN = "8907169595:AAHCwqL7Rc5y5iy2TmOF4--rgbpHVyvjnVE"  # Fallback
+    TOKEN = "8907169595:AAHCwqL7Rc5y5iy2TmOF4--rgbpHVyvjnVE"
 
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 if not CHAT_ID:
-    CHAT_ID = "743527023"  # Fallback
+    CHAT_ID = "743527023"
 
 BOT_URL = f"https://api.telegram.org/bot{TOKEN}"
 
-# Logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 print("="*60)
-print("🏦 KRUSTY KRAB TRADING BOT - ENHANCED v6.0")
+print("🏦 KRUSTY KRAB TRADING BOT - FULL EDITION")
+print("📊 XAU/USD (EXNESS) | BTC | ETH | FOREX")
 print(f"🤖 Bot: @krepXau_bot")
-print(f"📱 Chat ID: {CHAT_ID}")
 print("="*60)
 
 # ========================================
@@ -58,6 +55,7 @@ def init_db():
             tp3_price REAL NOT NULL,
             result TEXT,
             profit REAL,
+            timeframe TEXT DEFAULT '1h',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -80,13 +78,13 @@ init_db()
 # ========================================
 # FUNGSI DATABASE
 # ========================================
-def save_signal(asset, signal_type, entry, sl, tp1, tp2, tp3):
+def save_signal(asset, signal_type, entry, sl, tp1, tp2, tp3, timeframe="1h"):
     conn = sqlite3.connect('trading_history.db')
     c = conn.cursor()
     c.execute('''
-        INSERT INTO signals (asset, signal_type, entry_price, sl_price, tp1_price, tp2_price, tp3_price)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (asset, signal_type, entry, sl, tp1, tp2, tp3))
+        INSERT INTO signals (asset, signal_type, entry_price, sl_price, tp1_price, tp2_price, tp3_price, timeframe)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (asset, signal_type, entry, sl, tp1, tp2, tp3, timeframe))
     c.execute('''
         INSERT INTO performance (asset, total_signals) 
         VALUES (?, 1)
@@ -110,15 +108,9 @@ def get_performance():
 # ========================================
 def send_message(text, keyboard=None):
     url = f"{BOT_URL}/sendMessage"
-    payload = {
-        'chat_id': CHAT_ID,
-        'text': text,
-        'parse_mode': 'HTML'
-    }
+    payload = {'chat_id': CHAT_ID, 'text': text, 'parse_mode': 'HTML'}
     if keyboard:
-        payload['reply_markup'] = json.dumps({
-            'inline_keyboard': keyboard
-        })
+        payload['reply_markup'] = json.dumps({'inline_keyboard': keyboard})
     try:
         response = requests.post(url, json=payload, timeout=30)
         if response.status_code == 200:
@@ -133,16 +125,9 @@ def send_message(text, keyboard=None):
 
 def edit_message(message_id, text, keyboard=None):
     url = f"{BOT_URL}/editMessageText"
-    payload = {
-        'chat_id': CHAT_ID,
-        'message_id': message_id,
-        'text': text,
-        'parse_mode': 'HTML'
-    }
+    payload = {'chat_id': CHAT_ID, 'message_id': message_id, 'text': text, 'parse_mode': 'HTML'}
     if keyboard:
-        payload['reply_markup'] = json.dumps({
-            'inline_keyboard': keyboard
-        })
+        payload['reply_markup'] = json.dumps({'inline_keyboard': keyboard})
     try:
         response = requests.post(url, json=payload, timeout=30)
         return response.json()
@@ -159,25 +144,118 @@ def answer_callback(callback_id, text=""):
         pass
 
 # ========================================
-# FUNGSI ANALISIS ENHANCED
+# FUNGSI FUNDAMENTAL
 # ========================================
-def analyze_asset(ticker, name):
+def get_fundamental_data(ticker):
     try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        fundamental = {
+            'pe_ratio': info.get('trailingPE', 'N/A'),
+            'eps': info.get('trailingEps', 'N/A'),
+            'profit_margin': info.get('profitMargins', 'N/A'),
+            'revenue_growth': info.get('revenueGrowth', 'N/A'),
+            'debt_to_equity': info.get('debtToEquity', 'N/A'),
+            'return_on_equity': info.get('returnOnEquity', 'N/A'),
+            'sector': info.get('sector', 'N/A'),
+            'industry': info.get('industry', 'N/A'),
+        }
+        return fundamental
+    except:
+        return None
+
+def analyze_fundamental(ticker, name, price):
+    try:
+        fund = get_fundamental_data(ticker)
+        if not fund:
+            return None
+        
+        alasan = []
+        skor = 0
+        
+        if fund['pe_ratio'] != 'N/A':
+            pe = fund['pe_ratio']
+            if pe < 15:
+                skor += 15
+                alasan.append(f"✅ PE Ratio {pe:.2f} (Under-valued)")
+            elif pe > 25:
+                skor -= 15
+                alasan.append(f"⚠️ PE Ratio {pe:.2f} (Over-valued)")
+            else:
+                alasan.append(f"📊 PE Ratio {pe:.2f} (Fair value)")
+        
+        if fund['eps'] != 'N/A' and fund['eps'] > 0:
+            skor += 10
+            alasan.append(f"✅ EPS Positive (${fund['eps']:.2f})")
+        
+        if fund['profit_margin'] != 'N/A':
+            pm = fund['profit_margin']
+            if pm > 0.1:
+                skor += 10
+                alasan.append(f"✅ Profit Margin: {pm*100:.1f}%")
+            else:
+                skor -= 5
+                alasan.append(f"⚠️ Profit Margin: {pm*100:.1f}%")
+        
+        if skor >= 25:
+            signal = "🔥 FUNDAMENTAL BULLISH"
+        elif skor >= 10:
+            signal = "📈 FUNDAMENTAL POSITIF"
+        elif skor <= -25:
+            signal = "🔻 FUNDAMENTAL BEARISH"
+        elif skor <= -10:
+            signal = "📉 FUNDAMENTAL NEGATIF"
+        else:
+            signal = "⏸️ FUNDAMENTAL NEUTRAL"
+        
+        sector_text = f"📊 Sektor: {fund['sector']} | {fund['industry']}"
+        
+        return {
+            'signal': signal,
+            'skor': skor,
+            'alasan': alasan,
+            'sector': sector_text
+        }
+    except:
+        return None
+
+# ========================================
+# FUNGSI ANALISIS TEKNIKAL + FUNDAMENTAL
+# ========================================
+def analyze_asset(ticker, name, timeframe="1h"):
+    try:
+        # Mapping timeframe ke Yahoo Finance
+        tf_map = {
+            "5m": {"interval": "5m", "period": "1d"},
+            "15m": {"interval": "15m", "period": "5d"},
+            "1h": {"interval": "1h", "period": "1mo"},
+            "4h": {"interval": "1h", "period": "2mo"},
+        }
+        
+        interval = tf_map.get(timeframe, {"interval": "1h", "period": "1mo"})["interval"]
+        period = tf_map.get(timeframe, {"interval": "1h", "period": "1mo"})["period"]
+        
+        # Khusus XAU/USD
+        if ticker == "XAUUSD=X":
+            ticker = "GC=F"
+        
+        logger.info(f"📊 Analisis {name} - Timeframe: {timeframe}")
+        
         asset = yf.Ticker(ticker)
-        df = asset.history(period="2mo", interval="1d")
+        df = asset.history(period=period, interval=interval)
+        
         if df.empty or len(df) < 20:
+            logger.warning(f"⚠️ Data kosong untuk {name}")
             return None
 
-        # Indikator
+        # ===== INDIKATOR TEKNIKAL =====
         df['RSI'] = ta.momentum.RSIIndicator(df['Close'], window=14).rsi()
         df['MACD'] = ta.trend.MACD(df['Close']).macd()
         df['MACD_signal'] = ta.trend.MACD(df['Close']).macd_signal()
-        df['MACD_diff'] = df['MACD'] - df['MACD_signal']
         df['SMA20'] = ta.trend.sma_indicator(df['Close'], window=20)
         df['SMA50'] = ta.trend.sma_indicator(df['Close'], window=50)
         df['SMA200'] = ta.trend.sma_indicator(df['Close'], window=200)
         df['BB_high'] = ta.volatility.BollingerBands(df['Close'], window=20).bollinger_hband()
-        df['BB_mid'] = ta.volatility.BollingerBands(df['Close'], window=20).bollinger_mavg()
         df['BB_low'] = ta.volatility.BollingerBands(df['Close'], window=20).bollinger_lband()
         df['ATR'] = ta.volatility.AverageTrueRange(df['High'], df['Low'], df['Close'], window=14).average_true_range()
         df['StochRSI'] = ta.momentum.StochRSIIndicator(df['Close'], window=14).stochrsi()
@@ -194,76 +272,76 @@ def analyze_asset(ticker, name):
         fib_382 = high_20 - (high_20 - low_20) * 0.382
         fib_618 = high_20 - (high_20 - low_20) * 0.618
 
-        # Scoring
+        # ===== SCORING =====
         skor_buy, skor_sell, alasan = 0, 0, []
 
         # RSI
         if last['RSI'] < 30:
             skor_buy += 20
-            alasan.append(f"RSI Oversold ({last['RSI']:.1f})")
+            alasan.append(f"✅ RSI Oversold ({last['RSI']:.1f})")
         elif last['RSI'] > 70:
             skor_sell += 20
-            alasan.append(f"RSI Overbought ({last['RSI']:.1f})")
+            alasan.append(f"⚠️ RSI Overbought ({last['RSI']:.1f})")
 
         # MACD
         if last['MACD'] > last['MACD_signal'] and prev['MACD'] <= prev['MACD_signal']:
             skor_buy += 25
-            alasan.append("MACD Golden Cross")
+            alasan.append("✅ MACD Golden Cross")
         elif last['MACD'] < last['MACD_signal'] and prev['MACD'] >= prev['MACD_signal']:
             skor_sell += 25
-            alasan.append("MACD Death Cross")
+            alasan.append("⚠️ MACD Death Cross")
 
         # SMA
         if last['Close'] > last['SMA50']:
             skor_buy += 20
-            alasan.append("Harga > SMA50")
+            alasan.append("✅ Harga > SMA50")
         else:
             skor_sell += 20
-            alasan.append("Harga < SMA50")
+            alasan.append("⚠️ Harga < SMA50")
 
         # BB
         if last['Close'] < last['BB_low']:
             skor_buy += 15
-            alasan.append("Harga di BB Lower")
+            alasan.append("✅ Harga di BB Lower")
         elif last['Close'] > last['BB_high']:
             skor_sell += 15
-            alasan.append("Harga di BB Upper")
+            alasan.append("⚠️ Harga di BB Upper")
 
         # StochRSI
         if last['StochRSI'] < 0.2:
             skor_buy += 10
-            alasan.append(f"StochRSI Oversold ({last['StochRSI']:.2f})")
+            alasan.append(f"✅ StochRSI Oversold ({last['StochRSI']:.2f})")
         elif last['StochRSI'] > 0.8:
             skor_sell += 10
-            alasan.append(f"StochRSI Overbought ({last['StochRSI']:.2f})")
+            alasan.append(f"⚠️ StochRSI Overbought ({last['StochRSI']:.2f})")
 
         # Volume
         if last['Volume_ratio'] > 1.5:
             if skor_buy > skor_sell:
                 skor_buy += 10
-                alasan.append("Volume tinggi (konfirmasi)")
+                alasan.append("✅ Volume tinggi (konfirmasi)")
             else:
                 skor_sell += 10
-                alasan.append("Volume tinggi (konfirmasi)")
+                alasan.append("⚠️ Volume tinggi (konfirmasi)")
 
         # MFI
         if last['MFI'] < 20:
             skor_buy += 10
-            alasan.append(f"MFI Oversold ({last['MFI']:.1f})")
+            alasan.append(f"✅ MFI Oversold ({last['MFI']:.1f})")
         elif last['MFI'] > 80:
             skor_sell += 10
-            alasan.append(f"MFI Overbought ({last['MFI']:.1f})")
+            alasan.append(f"⚠️ MFI Overbought ({last['MFI']:.1f})")
 
         # ADX
         if last['ADX'] > 25:
             if skor_buy > skor_sell:
                 skor_buy += 10
-                alasan.append(f"ADX Trend Kuat ({last['ADX']:.1f})")
+                alasan.append(f"✅ ADX Trend Kuat ({last['ADX']:.1f})")
             else:
                 skor_sell += 10
-                alasan.append(f"ADX Trend Kuat ({last['ADX']:.1f})")
+                alasan.append(f"⚠️ ADX Trend Kuat ({last['ADX']:.1f})")
 
-        # Keputusan
+        # ===== KEPUTUSAN =====
         total_skor = skor_buy + skor_sell
         if total_skor > 0:
             if skor_buy > skor_sell + 30:
@@ -283,7 +361,7 @@ def analyze_asset(ticker, name):
         else:
             sinyal, confidence = "⏸️ NEUTRAL", 50
 
-        # Level
+        # ===== LEVEL =====
         atr, entry = last['ATR'], last['Close']
         if "BUY" in sinyal:
             sl, tp1, tp2 = entry - (atr * 1.5), entry + (atr * 1.5), entry + (atr * 2.5)
@@ -295,9 +373,22 @@ def analyze_asset(ticker, name):
             sl, tp1, tp2 = entry - atr, entry + atr, entry + (atr * 2)
             tp3 = entry + (atr * 3)
 
-        if "STRONG" in sinyal:
+        # ===== SIMPAN SINYAL =====
+        if "STRONG" in sinyal or "BUY" in sinyal or "SELL" in sinyal:
             direction = "BUY" if "BUY" in sinyal else "SELL"
-            save_signal(name.split()[0], direction, entry, sl, tp1, tp2, tp3)
+            save_signal(name.split()[0], direction, entry, sl, tp1, tp2, tp3, timeframe)
+
+        # ===== FUNDAMENTAL =====
+        fundamental = analyze_fundamental(ticker, name, entry)
+        fundamental_text = ""
+        if fundamental and fundamental['alasan']:
+            fund_alasan = "\n".join([f"   {a}" for a in fundamental['alasan']])
+            fundamental_text = f"""
+📊 <b>FUNDAMENTAL</b>
+🎯 {fundamental['signal']}
+{fund_alasan}
+{fundamental.get('sector', '')}
+"""
 
         return {
             'name': name,
@@ -324,28 +415,58 @@ def analyze_asset(ticker, name):
             'fib_618': fib_618,
             'skor_buy': skor_buy,
             'skor_sell': skor_sell,
-            'date': df.index[-1]
+            'date': df.index[-1],
+            'timeframe': timeframe,
+            'fundamental': fundamental_text
         }
     except Exception as e:
         logger.error(f"Error {name}: {e}")
         return None
 
 # ========================================
+# DAFTAR ASET - XAU/USD, CRYPTO, FOREX MAJOR
+# ========================================
+ASSETS = [
+    {"ticker": "XAUUSD=X", "name": "🥇 XAU/USD (Exness)"},
+    {"ticker": "BTC-USD", "name": "🪙 BTC/USD"},
+    {"ticker": "ETH-USD", "name": "⚡ ETH/USD"},
+    {"ticker": "EURUSD=X", "name": "💶 EUR/USD"},
+    {"ticker": "GBPUSD=X", "name": "💷 GBP/USD"},
+    {"ticker": "USDJPY=X", "name": "💴 USD/JPY"},
+    {"ticker": "AUDUSD=X", "name": "🇦🇺 AUD/USD"},
+    {"ticker": "USDCAD=X", "name": "🇨🇦 USD/CAD"},
+]
+
+# ========================================
+# GLOBAL VARIABLE TIMEFRAME
+# ========================================
+selected_timeframe = "1h"
+
+# ========================================
 # HANDLE CALLBACK
 # ========================================
 def handle_callback(callback_id, message_id, data):
+    global selected_timeframe
     answer_callback(callback_id)
     
+    # Timeframe mapping
+    tf_map = {
+        'tf_5m': '5m',
+        'tf_15m': '15m',
+        'tf_1h': '1h',
+        'tf_4h': '4h',
+    }
+    
+    # Asset mapping
     asset_map = {
-        'xau': {'ticker': 'GC=F', 'name': '🥇 XAU/USD (Emas)'},
-        'btc': {'ticker': 'BTC-USD', 'name': '🪙 BTC/USD (Bitcoin)'},
-        'eth': {'ticker': 'ETH-USD', 'name': '⚡ ETH/USD (Ethereum)'},
-        'eur': {'ticker': 'EURUSD=X', 'name': '💶 EUR/USD (Forex)'},
-        'gbp': {'ticker': 'GBPUSD=X', 'name': '💷 GBP/USD (Forex)'},
-        'usd': {'ticker': 'USDJPY=X', 'name': '💴 USD/JPY (Forex)'},
-        'aud': {'ticker': 'AUDUSD=X', 'name': '🇦🇺 AUD/USD (Forex)'},
-        'nzd': {'ticker': 'NZDUSD=X', 'name': '🇳🇿 NZD/USD (Forex)'},
-        'usdcad': {'ticker': 'USDCAD=X', 'name': '🇨🇦 USD/CAD (Forex)'},
+        'xau': {'ticker': 'XAUUSD=X', 'name': '🥇 XAU/USD (Exness)'},
+        'btc': {'ticker': 'BTC-USD', 'name': '🪙 BTC/USD'},
+        'eth': {'ticker': 'ETH-USD', 'name': '⚡ ETH/USD'},
+        'eur': {'ticker': 'EURUSD=X', 'name': '💶 EUR/USD'},
+        'gbp': {'ticker': 'GBPUSD=X', 'name': '💷 GBP/USD'},
+        'usd': {'ticker': 'USDJPY=X', 'name': '💴 USD/JPY'},
+        'aud': {'ticker': 'AUDUSD=X', 'name': '🇦🇺 AUD/USD'},
+        'usdcad': {'ticker': 'USDCAD=X', 'name': '🇨🇦 USD/CAD'},
         'all': None,
         'menu': None,
         'back': None,
@@ -355,8 +476,33 @@ def handle_callback(callback_id, message_id, data):
         send_menu(message_id)
         return
     
+    if data == 'timeframe':
+        keyboard = [
+            [{"text": "🕐 5 Menit", "callback_data": "tf_5m"}, {"text": "🕐 15 Menit", "callback_data": "tf_15m"}],
+            [{"text": "🕐 1 Jam", "callback_data": "tf_1h"}, {"text": "🕐 4 Jam", "callback_data": "tf_4h"}],
+            [{"text": "🔙 Kembali", "callback_data": "menu"}],
+        ]
+        edit_message(message_id, f"""
+📊 <b>PILIH TIMEFRAME</b>
+━━━━━━━━━━━━━━━━━━━━━
+
+⏰ Timeframe saat ini: <b>{selected_timeframe}</b>
+
+• <b>5 Menit</b> - Scalping (Entry cepat)
+• <b>15 Menit</b> - Scalping / Intraday
+• <b>1 Jam</b> - Swing Trading
+• <b>4 Jam</b> - Trend / Swing
+""", keyboard)
+        return
+    
+    if data in tf_map:
+        selected_timeframe = tf_map[data]
+        edit_message(message_id, f"✅ Timeframe berubah ke: <b>{selected_timeframe}</b>")
+        send_menu(message_id)
+        return
+    
     if data == 'all':
-        edit_message(message_id, "📊 Mengirim semua sinyal...")
+        edit_message(message_id, f"📊 Mengirim semua sinyal (Timeframe: {selected_timeframe})...")
         send_all_signals(message_id)
         return
     
@@ -386,28 +532,31 @@ def handle_callback(callback_id, message_id, data):
     
     if data in asset_map and data != 'all':
         asset = asset_map[data]
-        edit_message(message_id, f"📥 Menganalisis {asset['name']}...")
-        result = analyze_asset(asset['ticker'], asset['name'])
+        edit_message(message_id, f"📥 Menganalisis {asset['name']} (Timeframe: {selected_timeframe})...")
+        result = analyze_asset(asset['ticker'], asset['name'], selected_timeframe)
         
         if result:
-            alasan_text = "\n".join([f"   ✅ {a}" for a in result['alasan']])
+            alasan_text = "\n".join([f"   {a}" for a in result['alasan']])
             msg = f"""
 <b>{result['name']}</b>
 💰 Harga: <b>${result['price']:,.2f}</b>
+⏰ Timeframe: <b>{result['timeframe']}</b>
 
 🎯 <b>SINYAL: {result['sinyal']}</b>
 📊 Konfidensi: {result['confidence']}%
 📊 Skor: {result['skor_buy']}/{result['skor_sell']}
 
-📌 <b>Alasan:</b>
+📌 <b>Alasan Teknikal:</b>
 {alasan_text}
 
-⚡ <b>LEVEL:</b>
+{result['fundamental']}
+
+⚡ <b>LEVEL EXNESS:</b>
 📍 Entry: ${result['entry']:,.2f}
-🛑 SL: ${result['sl']:,.2f}
-🎯 TP1: ${result['tp1']:,.2f}
-🎯 TP2: ${result['tp2']:,.2f}
-🎯 TP3: ${result['tp3']:,.2f}
+🛑 SL: ${result['sl']:,.2f} ({abs(result['sl']/result['entry']-1)*100:.2f}%)
+🎯 TP1: ${result['tp1']:,.2f} (R:R 1:1.5)
+🎯 TP2: ${result['tp2']:,.2f} (R:R 1:2.5)
+🎯 TP3: ${result['tp3']:,.2f} (R:R 1:4.0)
 
 📊 <b>INDIKATOR:</b>
 • RSI: {result['rsi']:.1f}
@@ -420,149 +569,4 @@ def handle_callback(callback_id, message_id, data):
 • Volume: {result['volume_ratio']:.1f}x
 • MFI: {result['mfi']:.1f}
 • ADX: {result['adx']:.1f}
-• Fib 61.8%: ${result['fib_618']:,.2f}
-• Fib 38.2%: ${result['fib_382']:,.2f}
-━━━━━━━━━━━━━━━━━━━━━
-⚠️ Bukan nasihat keuangan
-"""
-            keyboard = [[{"text": "🔙 Kembali", "callback_data": "menu"}]]
-            edit_message(message_id, msg, keyboard)
-        else:
-            edit_message(message_id, f"❌ Gagal analisis {asset['name']}")
-
-# ========================================
-# SEND MENU
-# ========================================
-def send_menu(message_id=None):
-    keyboard = [
-        [{"text": "🥇 XAU/USD", "callback_data": "xau"}, {"text": "🪙 BTC/USD", "callback_data": "btc"}],
-        [{"text": "⚡ ETH/USD", "callback_data": "eth"}, {"text": "💶 EUR/USD", "callback_data": "eur"}],
-        [{"text": "💷 GBP/USD", "callback_data": "gbp"}, {"text": "💴 USD/JPY", "callback_data": "usd"}],
-        [{"text": "🇦🇺 AUD/USD", "callback_data": "aud"}, {"text": "🇳🇿 NZD/USD", "callback_data": "nzd"}],
-        [{"text": "🇨🇦 USD/CAD", "callback_data": "usdcad"}],
-        [{"text": "📊 SEMUA SINYAL", "callback_data": "all"}, {"text": "📈 PERFORMANCE", "callback_data": "performance"}],
-    ]
-    
-    msg = """
-╔═══════════════════════════════════════╗
-║   🏦  KRUSTY KRAB TRADING BOT         ║
-║   "Printing Money Since 2026"         ║
-║   VERSION 6.0 - ENHANCED              ║
-╚═══════════════════════════════════════╝
-
-📊 <b>PILIH ASET:</b>
-
-🥇 <b>Emas</b> - Safe haven
-🪙 <b>Bitcoin</b> - Crypto King
-⚡ <b>Ethereum</b> - Smart Contract
-
-💶 <b>EUR/USD</b> - Major Pair
-💷 <b>GBP/USD</b> - Cable
-💴 <b>USD/JPY</b> - Safe haven
-
-🇦🇺 <b>AUD/USD</b> - Aussie
-🇳🇿 <b>NZD/USD</b> - Kiwi
-🇨🇦 <b>USD/CAD</b> - Loonie
-
-📊 <b>Fitur:</b>
-• 12+ Indikator Teknikal
-• AI-Powered Scoring
-• 3 Level TP
-• Database History
-• Performance Tracker
-"""
-    if message_id:
-        edit_message(message_id, msg, keyboard)
-    else:
-        send_message(msg, keyboard)
-
-# ========================================
-# SEND ALL SIGNALS
-# ========================================
-def send_all_signals(message_id):
-    assets = [
-        {"ticker": "GC=F", "name": "🥇 XAU/USD (Emas)"},
-        {"ticker": "BTC-USD", "name": "🪙 BTC/USD (Bitcoin)"},
-        {"ticker": "ETH-USD", "name": "⚡ ETH/USD (Ethereum)"},
-        {"ticker": "EURUSD=X", "name": "💶 EUR/USD (Forex)"},
-        {"ticker": "GBPUSD=X", "name": "💷 GBP/USD (Forex)"},
-        {"ticker": "USDJPY=X", "name": "💴 USD/JPY (Forex)"},
-        {"ticker": "AUDUSD=X", "name": "🇦🇺 AUD/USD (Forex)"},
-        {"ticker": "NZDUSD=X", "name": "🇳🇿 NZD/USD (Forex)"},
-        {"ticker": "USDCAD=X", "name": "🇨🇦 USD/CAD (Forex)"},
-    ]
-    
-    msg = "📊 <b>SEMUA SINYAL</b>\n━━━━━━━━━━━━━━━━━━━━━\n"
-    
-    for asset in assets:
-        result = analyze_asset(asset['ticker'], asset['name'])
-        if result:
-            msg += f"""
-{result['name']}
-💰 ${result['price']:,.2f}
-🎯 {result['sinyal']} ({result['confidence']}%)
-📍 Entry: ${result['entry']:,.2f}
-🛑 SL: ${result['sl']:,.2f}
-🎯 TP: ${result['tp1']:,.2f} | ${result['tp2']:,.2f}
-━━━━━━━━━━━━━━━━━━━━━
-"""
-        time.sleep(0.5)
-    
-    keyboard = [[{"text": "🔙 Kembali", "callback_data": "menu"}]]
-    edit_message(message_id, msg, keyboard)
-
-# ========================================
-# GET UPDATES
-# ========================================
-def get_updates(offset=None):
-    url = f"{BOT_URL}/getUpdates"
-    params = {'timeout': 30, 'offset': offset}
-    try:
-        response = requests.get(url, params=params, timeout=35)
-        return response.json()
-    except:
-        return None
-
-# ========================================
-# MAIN
-# ========================================
-def main():
-    logger.info("🤖 Bot started...")
-    logger.info("📌 Kirim /start ke @krepXau_bot")
-    
-    # Kirim menu pertama
-    send_menu()
-    
-    last_update_id = None
-    while True:
-        try:
-            updates = get_updates(last_update_id)
-            if updates and updates.get('ok'):
-                for update in updates.get('result', []):
-                    last_update_id = update['update_id'] + 1
-                    
-                    if 'message' in update:
-                        chat_id = str(update['message']['chat']['id'])
-                        text = update['message'].get('text', '')
-                        if chat_id == CHAT_ID and text == '/start':
-                            send_menu()
-                    
-                    elif 'callback_query' in update:
-                        callback = update['callback_query']
-                        chat_id = str(callback['message']['chat']['id'])
-                        if chat_id == CHAT_ID:
-                            handle_callback(
-                                callback['id'],
-                                callback['message']['message_id'],
-                                callback['data']
-                            )
-            time.sleep(2)
-        except KeyboardInterrupt:
-            logger.info("👋 Bot stopped")
-            break
-        except Exception as e:
-            logger.error(f"Error: {e}")
-            time.sleep(5)
-
-if __name__ == "__main__":
-    main()
+• Fib 61.8%: ${resu
