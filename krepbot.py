@@ -1,8 +1,8 @@
 # ========================================
-# KRUSTY KRAB TRADING BOT - FULL EDITION v10.0
+# KRUSTY KRAB TRADING BOT - ULTIMATE EDITION v11.0
 # XAU/USD (EXNESS) | BTC | ETH | FOREX MAJOR
 # TIMEFRAME: 5M, 15M, 1H, 4H
-# DENGAN TIMEFRAME & FUNDAMENTAL DI LAPORAN
+# DENGAN SUPPORT/RESISTANCE, AUTO CLOSE, NOTIFIKASI
 # ========================================
 
 import os
@@ -13,6 +13,8 @@ import requests
 import time
 import sqlite3
 import json
+import schedule
+import threading
 from datetime import datetime, timedelta
 import logging
 
@@ -33,9 +35,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 print("="*60)
-print("🏦 KRUSTY KRAB TRADING BOT - FULL EDITION v10.0")
+print("🏦 KRUSTY KRAB TRADING BOT - ULTIMATE EDITION v11.0")
 print("📊 XAU/USD (EXNESS) | BTC | ETH | FOREX MAJOR")
 print("📊 TIMEFRAME: 5M | 15M | 1H | 4H")
+print("📊 NOTIFIKASI OTOMATIS | SUPPORT/RESISTANCE")
 print(f"🤖 Bot: @krepXau_bot")
 print("="*60)
 
@@ -58,7 +61,9 @@ def init_db():
             result TEXT,
             profit REAL,
             timeframe TEXT DEFAULT '1h',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            status TEXT DEFAULT 'ACTIVE',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            closed_at TIMESTAMP
         )
     ''')
     c.execute('''
@@ -92,6 +97,32 @@ def save_signal(asset, signal_type, entry, sl, tp1, tp2, tp3, timeframe="1h"):
         VALUES (?, 1)
         ON CONFLICT(asset) DO UPDATE SET total_signals = total_signals + 1
     ''', (asset,))
+    conn.commit()
+    conn.close()
+
+def close_expired_signals():
+    """Tutup sinyal yang sudah kadaluarsa (>24 jam)"""
+    conn = sqlite3.connect('trading_history.db')
+    c = conn.cursor()
+    c.execute('''
+        SELECT id, asset, entry_price, signal_type, sl_price, tp1_price, created_at 
+        FROM signals 
+        WHERE status = 'ACTIVE'
+    ''')
+    active = c.fetchall()
+    
+    for signal in active:
+        signal_id, asset, entry, signal_type, sl, tp1, created_at = signal
+        created_time = datetime.strptime(created_at, '%Y-%m-%d %H:%M:%S')
+        
+        # Cek expired (24 jam)
+        if datetime.now() - created_time > timedelta(hours=24):
+            c.execute('''
+                UPDATE signals 
+                SET status = 'EXPIRED', result = 'EXPIRED', closed_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (signal_id,))
+    
     conn.commit()
     conn.close()
 
@@ -146,10 +177,49 @@ def answer_callback(callback_id, text=""):
         pass
 
 # ========================================
+# FUNGSI SUPPORT & RESISTANCE
+# ========================================
+def calculate_support_resistance(df):
+    """Hitung Support & Resistance berdasarkan pivot point"""
+    try:
+        high = df['High'].tail(20).max()
+        low = df['Low'].tail(20).min()
+        close = df['Close'].iloc[-1]
+        
+        pivot = (high + low + close) / 3
+        r1 = 2 * pivot - low
+        r2 = pivot + (high - low)
+        r3 = high + 2 * (pivot - low)
+        s1 = 2 * pivot - high
+        s2 = pivot - (high - low)
+        s3 = low - 2 * (high - pivot)
+        
+        return {
+            'pivot': pivot,
+            'r1': r1, 'r2': r2, 'r3': r3,
+            's1': s1, 's2': s2, 's3': s3
+        }
+    except:
+        return None
+
+def get_sr_text(sr):
+    if not sr:
+        return ""
+    return f"""
+📊 <b>SUPPORT & RESISTANCE:</b>
+🔺 R3: ${sr['r3']:,.2f}
+🔺 R2: ${sr['r2']:,.2f}
+🔺 R1: ${sr['r1']:,.2f}
+📍 PIVOT: ${sr['pivot']:,.2f}
+🔻 S1: ${sr['s1']:,.2f}
+🔻 S2: ${sr['s2']:,.2f}
+🔻 S3: ${sr['s3']:,.2f}
+"""
+
+# ========================================
 # FUNGSI FUNDAMENTAL
 # ========================================
 def get_fundamental_data(ticker):
-    """Ambil data fundamental dari Yahoo Finance"""
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
@@ -162,14 +232,12 @@ def get_fundamental_data(ticker):
             'return_on_equity': info.get('returnOnEquity', 'N/A'),
             'sector': info.get('sector', 'N/A'),
             'industry': info.get('industry', 'N/A'),
-            'long_name': info.get('longName', 'N/A'),
         }
         return fundamental
     except:
         return None
 
 def analyze_fundamental(ticker, name, price):
-    """Analisis fundamental untuk menghasilkan sinyal tambahan"""
     try:
         fund = get_fundamental_data(ticker)
         if not fund:
@@ -178,7 +246,6 @@ def analyze_fundamental(ticker, name, price):
         alasan = []
         skor = 0
         
-        # PE Ratio
         if fund['pe_ratio'] != 'N/A':
             pe = fund['pe_ratio']
             if pe < 15:
@@ -190,7 +257,6 @@ def analyze_fundamental(ticker, name, price):
             else:
                 alasan.append(f"📊 PE Ratio {pe:.2f} (Fair value)")
         
-        # EPS
         if fund['eps'] != 'N/A' and fund['eps'] > 0:
             skor += 10
             alasan.append(f"✅ EPS Positive (${fund['eps']:.2f})")
@@ -198,7 +264,6 @@ def analyze_fundamental(ticker, name, price):
             skor -= 10
             alasan.append(f"⚠️ EPS Negative (${fund['eps']:.2f})")
         
-        # Profit Margin
         if fund['profit_margin'] != 'N/A':
             pm = fund['profit_margin']
             if pm > 0.1:
@@ -211,7 +276,6 @@ def analyze_fundamental(ticker, name, price):
                 skor -= 5
                 alasan.append(f"⚠️ Profit Margin: {pm*100:.1f}%")
         
-        # Revenue Growth
         if fund['revenue_growth'] != 'N/A':
             rg = fund['revenue_growth']
             if rg > 0.1:
@@ -224,7 +288,6 @@ def analyze_fundamental(ticker, name, price):
                 skor -= 10
                 alasan.append(f"⚠️ Revenue Growth: {rg*100:.1f}%")
         
-        # Debt to Equity
         if fund['debt_to_equity'] != 'N/A':
             de = fund['debt_to_equity']
             if de < 50:
@@ -236,7 +299,6 @@ def analyze_fundamental(ticker, name, price):
                 skor -= 10
                 alasan.append(f"⚠️ Debt/Equity: {de:.1f}%")
         
-        # ROE
         if fund['return_on_equity'] != 'N/A':
             roe = fund['return_on_equity']
             if roe > 0.15:
@@ -248,10 +310,8 @@ def analyze_fundamental(ticker, name, price):
                 skor -= 5
                 alasan.append(f"⚠️ ROE: {roe*100:.1f}%")
         
-        # Sektor
         sector_text = f"📊 Sektor: {fund['sector']} | {fund['industry']}"
         
-        # Kesimpulan
         if skor >= 25:
             signal = "🔥 FUNDAMENTAL BULLISH"
         elif skor >= 10:
@@ -273,11 +333,10 @@ def analyze_fundamental(ticker, name, price):
         return None
 
 # ========================================
-# FUNGSI ANALISIS TEKNIKAL + FUNDAMENTAL
+# FUNGSI ANALISIS UTAMA
 # ========================================
 def analyze_asset(ticker, name, timeframe="1h"):
     try:
-        # Mapping timeframe ke Yahoo Finance
         tf_map = {
             "5m": {"interval": "5m", "period": "1d"},
             "15m": {"interval": "15m", "period": "5d"},
@@ -288,7 +347,6 @@ def analyze_asset(ticker, name, timeframe="1h"):
         interval = tf_map.get(timeframe, {"interval": "1h", "period": "1mo"})["interval"]
         period = tf_map.get(timeframe, {"interval": "1h", "period": "1mo"})["period"]
         
-        # Khusus XAU/USD
         if ticker == "XAUUSD=X":
             ticker = "GC=F"
         
@@ -319,7 +377,6 @@ def analyze_asset(ticker, name, timeframe="1h"):
         last = df.iloc[-1]
         prev = df.iloc[-2] if len(df) > 1 else last
 
-        # Fibonacci
         high_20 = df['High'].tail(20).max()
         low_20 = df['Low'].tail(20).min()
         fib_382 = high_20 - (high_20 - low_20) * 0.382
@@ -328,7 +385,6 @@ def analyze_asset(ticker, name, timeframe="1h"):
         # ===== SCORING =====
         skor_buy, skor_sell, alasan = 0, 0, []
 
-        # RSI
         if last['RSI'] < 30:
             skor_buy += 20
             alasan.append(f"✅ RSI Oversold ({last['RSI']:.1f})")
@@ -336,7 +392,6 @@ def analyze_asset(ticker, name, timeframe="1h"):
             skor_sell += 20
             alasan.append(f"⚠️ RSI Overbought ({last['RSI']:.1f})")
 
-        # MACD
         if last['MACD'] > last['MACD_signal'] and prev['MACD'] <= prev['MACD_signal']:
             skor_buy += 25
             alasan.append("✅ MACD Golden Cross")
@@ -344,7 +399,6 @@ def analyze_asset(ticker, name, timeframe="1h"):
             skor_sell += 25
             alasan.append("⚠️ MACD Death Cross")
 
-        # SMA
         if last['Close'] > last['SMA50']:
             skor_buy += 20
             alasan.append("✅ Harga > SMA50")
@@ -352,7 +406,6 @@ def analyze_asset(ticker, name, timeframe="1h"):
             skor_sell += 20
             alasan.append("⚠️ Harga < SMA50")
 
-        # BB
         if last['Close'] < last['BB_low']:
             skor_buy += 15
             alasan.append("✅ Harga di BB Lower")
@@ -360,7 +413,6 @@ def analyze_asset(ticker, name, timeframe="1h"):
             skor_sell += 15
             alasan.append("⚠️ Harga di BB Upper")
 
-        # StochRSI
         if last['StochRSI'] < 0.2:
             skor_buy += 10
             alasan.append(f"✅ StochRSI Oversold ({last['StochRSI']:.2f})")
@@ -368,7 +420,6 @@ def analyze_asset(ticker, name, timeframe="1h"):
             skor_sell += 10
             alasan.append(f"⚠️ StochRSI Overbought ({last['StochRSI']:.2f})")
 
-        # Volume
         if last['Volume_ratio'] > 1.5:
             if skor_buy > skor_sell:
                 skor_buy += 10
@@ -377,7 +428,6 @@ def analyze_asset(ticker, name, timeframe="1h"):
                 skor_sell += 10
                 alasan.append("⚠️ Volume tinggi (konfirmasi)")
 
-        # MFI
         if last['MFI'] < 20:
             skor_buy += 10
             alasan.append(f"✅ MFI Oversold ({last['MFI']:.1f})")
@@ -385,7 +435,6 @@ def analyze_asset(ticker, name, timeframe="1h"):
             skor_sell += 10
             alasan.append(f"⚠️ MFI Overbought ({last['MFI']:.1f})")
 
-        # ADX
         if last['ADX'] > 25:
             if skor_buy > skor_sell:
                 skor_buy += 10
@@ -431,6 +480,10 @@ def analyze_asset(ticker, name, timeframe="1h"):
             direction = "BUY" if "BUY" in sinyal else "SELL"
             save_signal(name.split()[0], direction, entry, sl, tp1, tp2, tp3, timeframe)
 
+        # ===== SUPPORT & RESISTANCE =====
+        sr = calculate_support_resistance(df)
+        sr_text = get_sr_text(sr)
+
         # ===== FUNDAMENTAL =====
         fundamental = analyze_fundamental(ticker, name, entry)
         fundamental_text = ""
@@ -444,7 +497,6 @@ def analyze_asset(ticker, name, timeframe="1h"):
 {fundamental.get('sector', '')}
 """
         else:
-            # Jika tidak ada data fundamental (crypto, forex)
             if "BTC" in name or "ETH" in name:
                 fundamental_text = "📊 <b>FUNDAMENTAL:</b> Data tidak tersedia untuk crypto"
             elif "USD" in name or "EUR" in name or "GBP" in name:
@@ -479,14 +531,15 @@ def analyze_asset(ticker, name, timeframe="1h"):
             'skor_sell': skor_sell,
             'date': df.index[-1],
             'timeframe': timeframe,
-            'fundamental': fundamental_text
+            'fundamental': fundamental_text,
+            'sr_text': sr_text
         }
     except Exception as e:
         logger.error(f"Error {name}: {e}")
         return None
 
 # ========================================
-# DAFTAR ASET - XAU/USD, CRYPTO, FOREX MAJOR
+# DAFTAR ASET
 # ========================================
 ASSETS = [
     {"ticker": "XAUUSD=X", "name": "🥇 XAU/USD (Exness)"},
@@ -499,10 +552,72 @@ ASSETS = [
     {"ticker": "USDCAD=X", "name": "🇨🇦 USD/CAD"},
 ]
 
-# ========================================
-# GLOBAL VARIABLE TIMEFRAME
-# ========================================
 selected_timeframe = "1h"
+
+# ========================================
+# NOTIFIKASI OTOMATIS
+# ========================================
+def send_auto_signal():
+    """Kirim sinyal otomatis setiap 4 jam"""
+    logger.info("📢 Mengirim notifikasi otomatis...")
+    
+    # Tutup sinyal expired dulu
+    close_expired_signals()
+    
+    # Kirim sinyal untuk aset utama
+    main_assets = [
+        {"ticker": "XAUUSD=X", "name": "🥇 XAU/USD (Exness)"},
+        {"ticker": "BTC-USD", "name": "🪙 BTC/USD"},
+        {"ticker": "ETH-USD", "name": "⚡ ETH/USD"},
+    ]
+    
+    msg = f"""
+╔═══════════════════════════════════════╗
+║   🔔 NOTIFIKASI OTOMATIS              ║
+║   ⏰ {datetime.now().strftime('%Y-%m-%d %H:%M')} WIB  ║
+╚═══════════════════════════════════════╝
+
+📊 <b>SINYAL HARIAN</b>
+⏰ Timeframe: <b>{selected_timeframe}</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+    send_message(msg)
+    time.sleep(1)
+    
+    for asset in main_assets:
+        result = analyze_asset(asset['ticker'], asset['name'], selected_timeframe)
+        if result:
+            alasan_text = "\n".join([f"   {a}" for a in result['alasan']])
+            msg = f"""
+<b>{result['name']}</b>
+💰 Harga: <b>${result['price']:,.2f}</b>
+🎯 <b>SINYAL: {result['sinyal']}</b>
+📊 Konfidensi: {result['confidence']}%
+
+📌 Alasan:
+{alasan_text}
+
+📍 Entry: ${result['entry']:,.2f}
+🛑 SL: ${result['sl']:,.2f}
+🎯 TP1: ${result['tp1']:,.2f}
+🎯 TP2: ${result['tp2']:,.2f}
+━━━━━━━━━━━━━━━━━━━━━
+"""
+            send_message(msg)
+            time.sleep(1.5)
+
+def start_scheduler():
+    """Jalankan scheduler untuk notifikasi otomatis"""
+    # Kirim setiap 4 jam
+    schedule.every(4).hours.do(send_auto_signal)
+    
+    # Kirim sinyal pertama saat startup
+    time.sleep(5)
+    send_auto_signal()
+    
+    while True:
+        schedule.run_pending()
+        time.sleep(30)
 
 # ========================================
 # HANDLE CALLBACK
@@ -511,7 +626,6 @@ def handle_callback(callback_id, message_id, data):
     global selected_timeframe
     answer_callback(callback_id)
     
-    # Timeframe mapping
     tf_map = {
         'tf_5m': '5m',
         'tf_15m': '15m',
@@ -519,7 +633,6 @@ def handle_callback(callback_id, message_id, data):
         'tf_4h': '4h',
     }
     
-    # Asset mapping
     asset_map = {
         'xau': {'ticker': 'XAUUSD=X', 'name': '🥇 XAU/USD (Exness)'},
         'btc': {'ticker': 'BTC-USD', 'name': '🪙 BTC/USD'},
@@ -569,6 +682,7 @@ def handle_callback(callback_id, message_id, data):
         return
     
     if data == 'performance':
+        close_expired_signals()
         total, per_asset = get_performance()
         total_signals, wins, losses, total_profit = total
         winrate = round((wins / (wins + losses)) * 100, 1) if (wins + losses) > 0 else 0
@@ -612,6 +726,7 @@ def handle_callback(callback_id, message_id, data):
 {alasan_text}
 
 {result['fundamental']}
+{result['sr_text']}
 
 ⚡ <b>LEVEL EXNESS:</b>
 📍 Entry: ${result['entry']:,.2f}
@@ -635,7 +750,7 @@ def handle_callback(callback_id, message_id, data):
 • Fib 38.2%: ${result['fib_382']:,.2f}
 ━━━━━━━━━━━━━━━━━━━━━
 ⚠️ Bukan nasihat keuangan
-💡 Gunakan untuk referensi, entry sesuai analisis sendiri
+💡 Gunakan untuk referensi
 """
             keyboard = [[{"text": "🔙 Kembali", "callback_data": "menu"}]]
             edit_message(message_id, msg, keyboard)
@@ -659,7 +774,7 @@ def send_menu(message_id=None):
 ╔═══════════════════════════════════════╗
 ║   🏦  KRUSTY KRAB TRADING BOT         ║
 ║   "Printing Money Since 2026"         ║
-║   FULL EDITION v10.0                  ║
+║   ULTIMATE EDITION v11.0              ║
 ╚═══════════════════════════════════════╝
 
 📊 <b>PILIH ASET:</b>
@@ -675,14 +790,17 @@ def send_menu(message_id=None):
 🇦🇺 <b>AUD/USD</b> - Aussie
 🇨🇦 <b>USD/CAD</b> - Loonie
 
-📊 <b>Fitur:</b>
+📊 <b>Fitur Lengkap:</b>
 • 12+ Indikator Teknikal
 • AI-Powered Scoring
 • 3 Level TP
 • Database History
 • Performance Tracker
-• <b>4 Timeframe</b> (5M, 15M, 1H, 4H)
+• 4 Timeframe (5M, 15M, 1H, 4H)
 • Fundamental Analysis
+• Support & Resistance
+• Auto Close Signal (24 jam)
+• Notifikasi Otomatis (4 jam sekali)
 """
     if message_id:
         edit_message(message_id, msg, keyboard)
@@ -693,6 +811,7 @@ def send_menu(message_id=None):
 # SEND ALL SIGNALS
 # ========================================
 def send_all_signals(message_id):
+    close_expired_signals()
     msg = f"📊 <b>SEMUA SINYAL</b> (Timeframe: {selected_timeframe})\n━━━━━━━━━━━━━━━━━━━━━\n"
     
     for asset in ASSETS:
@@ -728,12 +847,19 @@ def get_updates(offset=None):
 # MAIN
 # ========================================
 def main():
-    logger.info("🤖 KRUSTY KRAB TRADING BOT v10.0 STARTED")
-    logger.info("📊 XAU/USD (EXNESS) | BTC | ETH | FOREX MAJOR")
+    logger.info("🤖 KRUSTY KRAB TRADING BOT v11.0 STARTED")
+    logger.info("📊 ULTIMATE EDITION - ALL FEATURES")
     logger.info("📌 Kirim /start ke @krepXau_bot")
+    
+    # Tutup sinyal expired
+    close_expired_signals()
     
     # Kirim menu pertama
     send_menu()
+    
+    # Start scheduler di thread terpisah
+    scheduler_thread = threading.Thread(target=start_scheduler, daemon=True)
+    scheduler_thread.start()
     
     last_update_id = None
     while True:
@@ -768,4 +894,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
