@@ -1,5 +1,5 @@
 # ========================================
-# KRUSTY KRAB TRADING BOT - SIMPLE VERSION
+# KRUSTY KRAB TRADING BOT - FIXED VERSION
 # PASTI JALAN DI RAILWAY
 # ========================================
 
@@ -30,8 +30,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 print("="*60)
-print("🤖 KRUSTY KRAB TRADING BOT - SIMPLE VERSION")
+print("🤖 KRUSTY KRAB TRADING BOT - FIXED VERSION")
 print(f"🤖 Bot: @krepXau_bot")
+print(f"📱 Chat ID: {CHAT_ID}")
 print("="*60)
 
 # ========================================
@@ -44,9 +45,10 @@ def send_message(text, keyboard=None):
         payload['reply_markup'] = json.dumps({'inline_keyboard': keyboard})
     try:
         response = requests.post(url, json=payload, timeout=30)
+        logger.info(f"send_message: {response.status_code}")
         return response.json()
     except Exception as e:
-        logger.error(f"Error: {e}")
+        logger.error(f"send_message error: {e}")
         return None
 
 def edit_message(message_id, text, keyboard=None):
@@ -56,24 +58,25 @@ def edit_message(message_id, text, keyboard=None):
         payload['reply_markup'] = json.dumps({'inline_keyboard': keyboard})
     try:
         response = requests.post(url, json=payload, timeout=30)
+        logger.info(f"edit_message: {response.status_code}")
         return response.json()
     except Exception as e:
-        logger.error(f"Error: {e}")
+        logger.error(f"edit_message error: {e}")
         return None
 
 def answer_callback(callback_id):
     url = f"{BOT_URL}/answerCallbackQuery"
     try:
-        requests.post(url, json={'callback_query_id': callback_id}, timeout=5)
-    except:
-        pass
+        response = requests.post(url, json={'callback_query_id': callback_id}, timeout=5)
+        logger.info(f"answer_callback: {response.status_code}")
+    except Exception as e:
+        logger.error(f"answer_callback error: {e}")
 
 # ========================================
 # FUNGSI ANALISIS SEDERHANA
 # ========================================
 def analyze_asset(ticker, name, timeframe="1h"):
     try:
-        # Mapping timeframe
         tf_map = {
             "5m": {"interval": "5m", "period": "1d"},
             "15m": {"interval": "15m", "period": "5d"},
@@ -93,6 +96,7 @@ def analyze_asset(ticker, name, timeframe="1h"):
         df = asset.history(period=period, interval=interval)
         
         if df.empty or len(df) < 10:
+            logger.warning(f"⚠️ Data kosong untuk {name}")
             return None
         
         # Indikator dasar
@@ -105,7 +109,7 @@ def analyze_asset(ticker, name, timeframe="1h"):
         last = df.iloc[-1]
         prev = df.iloc[-2] if len(df) > 1 else last
         
-        # Scoring sederhana
+        # Scoring
         skor_buy = 0
         skor_sell = 0
         alasan = []
@@ -178,9 +182,14 @@ def analyze_asset(ticker, name, timeframe="1h"):
         return None
 
 # ========================================
+# GLOBAL VARIABLE
+# ========================================
+selected_timeframe = "1h"
+
+# ========================================
 # MENU UTAMA
 # ========================================
-def send_menu():
+def send_menu(message_id=None):
     keyboard = [
         [{"text": "⏰ TIMEFRAME", "callback_data": "tf"}],
         [{"text": "🥇 XAU/USD", "callback_data": "xau"}, {"text": "🪙 BTC/USD", "callback_data": "btc"}],
@@ -188,45 +197,28 @@ def send_menu():
         [{"text": "💷 GBP/USD", "callback_data": "gbp"}, {"text": "💴 USD/JPY", "callback_data": "usd"}],
         [{"text": "🇦🇺 AUD/USD", "callback_data": "aud"}, {"text": "🇨🇦 USD/CAD", "callback_data": "cad"}],
     ]
-    msg = """
+    msg = f"""
 🏦 <b>KRUSTY KRAB TRADING BOT</b>
 "Printing Money Since 2026"
 
+⏰ Timeframe: <b>{selected_timeframe}</b>
+
 📊 Pilih aset di bawah:
 """
-    send_message(msg, keyboard)
+    if message_id:
+        edit_message(message_id, msg, keyboard)
+    else:
+        send_message(msg, keyboard)
 
 # ========================================
 # HANDLE CALLBACK
 # ========================================
-selected_timeframe = "1h"
-
 def handle_callback(callback_id, message_id, data):
     global selected_timeframe
+    logger.info(f"📥 Callback received: {data}")
     answer_callback(callback_id)
     
-    # Timeframe
-    if data == "tf_5m":
-        selected_timeframe = "5m"
-        edit_message(message_id, f"✅ Timeframe: 5 Menit")
-        send_menu()
-        return
-    elif data == "tf_15m":
-        selected_timeframe = "15m"
-        edit_message(message_id, f"✅ Timeframe: 15 Menit")
-        send_menu()
-        return
-    elif data == "tf_1h":
-        selected_timeframe = "1h"
-        edit_message(message_id, f"✅ Timeframe: 1 Jam")
-        send_menu()
-        return
-    elif data == "tf_4h":
-        selected_timeframe = "4h"
-        edit_message(message_id, f"✅ Timeframe: 4 Jam")
-        send_menu()
-        return
-    
+    # === TIMEFRAME SELECTION ===
     if data == "tf":
         keyboard = [
             [{"text": "🕐 5 Menit", "callback_data": "tf_5m"}, {"text": "🕐 15 Menit", "callback_data": "tf_15m"}],
@@ -236,11 +228,23 @@ def handle_callback(callback_id, message_id, data):
         edit_message(message_id, f"⏰ Pilih Timeframe:\nSaat ini: {selected_timeframe}", keyboard)
         return
     
-    if data == "menu":
-        send_menu()
+    if data in ["tf_5m", "tf_15m", "tf_1h", "tf_4h"]:
+        tf_map = {
+            "tf_5m": "5m",
+            "tf_15m": "15m",
+            "tf_1h": "1h",
+            "tf_4h": "4h"
+        }
+        selected_timeframe = tf_map[data]
+        edit_message(message_id, f"✅ Timeframe: {selected_timeframe}")
+        send_menu(message_id)
         return
     
-    # Asset mapping
+    if data == "menu":
+        send_menu(message_id)
+        return
+    
+    # === ASSET ANALYSIS ===
     asset_map = {
         'xau': {'ticker': 'XAUUSD=X', 'name': '🥇 XAU/USD'},
         'btc': {'ticker': 'BTC-USD', 'name': '🪙 BTC/USD'},
@@ -293,7 +297,8 @@ def get_updates(offset=None):
     try:
         response = requests.get(url, params=params, timeout=35)
         return response.json()
-    except:
+    except Exception as e:
+        logger.error(f"get_updates error: {e}")
         return None
 
 # ========================================
@@ -302,7 +307,7 @@ def get_updates(offset=None):
 def main():
     logger.info("🤖 Bot started...")
     
-    # Kirim menu saat startup
+    # Kirim menu pertama
     send_menu()
     
     last_update_id = None
@@ -319,6 +324,8 @@ def main():
                         if chat_id == CHAT_ID:
                             if text == '/start':
                                 send_menu()
+                            else:
+                                send_message(f"❓ Kirim /start untuk menu")
                     
                     elif 'callback_query' in update:
                         callback = update['callback_query']
@@ -332,11 +339,11 @@ def main():
                                 )
                             except Exception as e:
                                 logger.error(f"Callback error: {e}")
+                                answer_callback(callback['id'])
             time.sleep(2)
         except Exception as e:
-            logger.error(f"Error: {e}")
+            logger.error(f"Main error: {e}")
             time.sleep(5)
 
 if __name__ == "__main__":
     main()
-    
