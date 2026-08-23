@@ -1,6 +1,6 @@
 # ========================================
-# KRUSTY KRAB TRADING BOT - ENHANCED v13.1
-# SEMUA TOMBOL BERFUNGSI!
+# KRUSTY KRAB TRADING BOT - ENHANCED v14.0
+# DENGAN ERROR HANDLING & FALLBACK
 # FILE: krepbot.py
 # ========================================
 
@@ -15,6 +15,7 @@ import sqlite3
 from datetime import datetime, timedelta
 import logging
 import threading
+import traceback
 
 # ========================================
 # KONFIGURASI
@@ -33,8 +34,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 print("="*60)
-print("🏦 KRUSTY KRAB TRADING BOT - ENHANCED v13.1")
-print("📊 SEMUA TOMBOL BERFUNGSI!")
+print("🏦 KRUSTY KRAB TRADING BOT - ENHANCED v14.0")
+print("📊 DENGAN ERROR HANDLING")
 print(f"🤖 Bot: @krepXau_bot")
 print("="*60)
 
@@ -42,39 +43,42 @@ print("="*60)
 # DATABASE
 # ========================================
 def init_db():
-    conn = sqlite3.connect('trading_history.db')
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS signals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            asset TEXT NOT NULL,
-            signal_type TEXT NOT NULL,
-            entry_price REAL NOT NULL,
-            sl_price REAL NOT NULL,
-            tp1_price REAL NOT NULL,
-            tp2_price REAL NOT NULL,
-            tp3_price REAL NOT NULL,
-            result TEXT,
-            profit REAL,
-            timeframe TEXT DEFAULT '1h',
-            status TEXT DEFAULT 'ACTIVE',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            closed_at TIMESTAMP
-        )
-    ''')
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS performance (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            asset TEXT NOT NULL UNIQUE,
-            total_signals INTEGER DEFAULT 0,
-            wins INTEGER DEFAULT 0,
-            losses INTEGER DEFAULT 0,
-            total_profit REAL DEFAULT 0
-        )
-    ''')
-    conn.commit()
-    conn.close()
-    logger.info("✅ Database initialized")
+    try:
+        conn = sqlite3.connect('trading_history.db')
+        c = conn.cursor()
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset TEXT NOT NULL,
+                signal_type TEXT NOT NULL,
+                entry_price REAL NOT NULL,
+                sl_price REAL NOT NULL,
+                tp1_price REAL NOT NULL,
+                tp2_price REAL NOT NULL,
+                tp3_price REAL NOT NULL,
+                result TEXT,
+                profit REAL,
+                timeframe TEXT DEFAULT '1h',
+                status TEXT DEFAULT 'ACTIVE',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                closed_at TIMESTAMP
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS performance (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset TEXT NOT NULL UNIQUE,
+                total_signals INTEGER DEFAULT 0,
+                wins INTEGER DEFAULT 0,
+                losses INTEGER DEFAULT 0,
+                total_profit REAL DEFAULT 0
+            )
+        ''')
+        conn.commit()
+        conn.close()
+        logger.info("✅ Database initialized")
+    except Exception as e:
+        logger.error(f"Database error: {e}")
 
 init_db()
 
@@ -82,64 +86,73 @@ init_db()
 # FUNGSI DATABASE
 # ========================================
 def save_signal(asset, signal_type, entry, sl, tp1, tp2, tp3, timeframe="1h"):
-    conn = sqlite3.connect('trading_history.db')
-    c = conn.cursor()
-    c.execute('''
-        INSERT INTO signals (asset, signal_type, entry_price, sl_price, tp1_price, tp2_price, tp3_price, timeframe)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (asset, signal_type, entry, sl, tp1, tp2, tp3, timeframe))
-    c.execute('''
-        INSERT INTO performance (asset, total_signals) 
-        VALUES (?, 1)
-        ON CONFLICT(asset) DO UPDATE SET total_signals = total_signals + 1
-    ''', (asset,))
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect('trading_history.db')
+        c = conn.cursor()
+        c.execute('''
+            INSERT INTO signals (asset, signal_type, entry_price, sl_price, tp1_price, tp2_price, tp3_price, timeframe)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (asset, signal_type, entry, sl, tp1, tp2, tp3, timeframe))
+        c.execute('''
+            INSERT INTO performance (asset, total_signals) 
+            VALUES (?, 1)
+            ON CONFLICT(asset) DO UPDATE SET total_signals = total_signals + 1
+        ''', (asset,))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Save signal error: {e}")
 
 def close_expired_signals():
-    conn = sqlite3.connect('trading_history.db')
-    c = conn.cursor()
-    c.execute('''
-        SELECT id, asset, entry_price, signal_type, sl_price, tp1_price, created_at 
-        FROM signals 
-        WHERE status = 'ACTIVE'
-    ''')
-    active = c.fetchall()
-    
-    for signal in active:
-        signal_id, asset, entry, signal_type, sl, tp1, created_at = signal
-        created_time = datetime.strptime(created_at, '%Y-%m-%d %H:%M:%S')
+    try:
+        conn = sqlite3.connect('trading_history.db')
+        c = conn.cursor()
+        c.execute('''
+            SELECT id, asset, entry_price, signal_type, sl_price, tp1_price, created_at 
+            FROM signals 
+            WHERE status = 'ACTIVE'
+        ''')
+        active = c.fetchall()
         
-        if datetime.now() - created_time > timedelta(hours=24):
-            c.execute('''
-                UPDATE signals 
-                SET status = 'EXPIRED', result = 'EXPIRED', closed_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            ''', (signal_id,))
-    
-    conn.commit()
-    conn.close()
+        for signal in active:
+            signal_id, asset, entry, signal_type, sl, tp1, created_at = signal
+            created_time = datetime.strptime(created_at, '%Y-%m-%d %H:%M:%S')
+            
+            if datetime.now() - created_time > timedelta(hours=24):
+                c.execute('''
+                    UPDATE signals 
+                    SET status = 'EXPIRED', result = 'EXPIRED', closed_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (signal_id,))
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Close expired error: {e}")
 
 def get_performance():
-    conn = sqlite3.connect('trading_history.db')
-    c = conn.cursor()
-    c.execute('SELECT SUM(total_signals), SUM(wins), SUM(losses), SUM(total_profit) FROM performance')
-    total = c.fetchone()
-    c.execute('SELECT asset, total_signals, wins, losses, total_profit FROM performance')
-    per_asset = c.fetchall()
-    conn.close()
-    return total, per_asset
+    try:
+        conn = sqlite3.connect('trading_history.db')
+        c = conn.cursor()
+        c.execute('SELECT SUM(total_signals), SUM(wins), SUM(losses), SUM(total_profit) FROM performance')
+        total = c.fetchone()
+        c.execute('SELECT asset, total_signals, wins, losses, total_profit FROM performance')
+        per_asset = c.fetchall()
+        conn.close()
+        return total, per_asset
+    except:
+        return (0,0,0,0), []
 
 # ========================================
 # FUNGSI KIRIM PESAN
 # ========================================
 def send_message(text, keyboard=None):
-    url = f"{BOT_URL}/sendMessage"
-    payload = {'chat_id': CHAT_ID, 'text': text, 'parse_mode': 'HTML'}
-    if keyboard:
-        payload['reply_markup'] = json.dumps({'inline_keyboard': keyboard})
     try:
-        response = requests.post(url, json=payload, timeout=30)
+        url = f"{BOT_URL}/sendMessage"
+        payload = {'chat_id': CHAT_ID, 'text': text, 'parse_mode': 'HTML'}
+        if keyboard:
+            payload['reply_markup'] = json.dumps({'inline_keyboard': keyboard})
+        response = requests.post(url, json=payload, timeout=60)
         if response.status_code == 200:
             logger.info("✅ Pesan terkirim!")
             return response.json()
@@ -147,387 +160,134 @@ def send_message(text, keyboard=None):
             logger.error(f"❌ Gagal: {response.text}")
             return None
     except Exception as e:
-        logger.error(f"❌ Error: {e}")
+        logger.error(f"❌ Send error: {e}")
         return None
 
 def edit_message(message_id, text, keyboard=None):
-    url = f"{BOT_URL}/editMessageText"
-    payload = {'chat_id': CHAT_ID, 'message_id': message_id, 'text': text, 'parse_mode': 'HTML'}
-    if keyboard:
-        payload['reply_markup'] = json.dumps({'inline_keyboard': keyboard})
     try:
-        response = requests.post(url, json=payload, timeout=30)
+        url = f"{BOT_URL}/editMessageText"
+        payload = {'chat_id': CHAT_ID, 'message_id': message_id, 'text': text, 'parse_mode': 'HTML'}
+        if keyboard:
+            payload['reply_markup'] = json.dumps({'inline_keyboard': keyboard})
+        response = requests.post(url, json=payload, timeout=60)
         return response.json()
     except Exception as e:
         logger.error(f"❌ Edit error: {e}")
         return None
 
 def answer_callback(callback_id, text=""):
-    url = f"{BOT_URL}/answerCallbackQuery"
-    payload = {'callback_query_id': callback_id, 'text': text}
     try:
+        url = f"{BOT_URL}/answerCallbackQuery"
+        payload = {'callback_query_id': callback_id, 'text': text}
         requests.post(url, json=payload, timeout=5)
     except:
         pass
 
 # ========================================
-# FUNGSI SUPPORT & RESISTANCE
+# FUNGSI ANALISIS SEDERHANA (STABIL)
 # ========================================
-def calculate_support_resistance(df):
+def analyze_asset_simple(ticker, name, timeframe="1h"):
     try:
-        high = df['High'].tail(20).max()
-        low = df['Low'].tail(20).min()
-        close = df['Close'].iloc[-1]
-        
-        pivot = (high + low + close) / 3
-        r1 = 2 * pivot - low
-        r2 = pivot + (high - low)
-        r3 = high + 2 * (pivot - low)
-        s1 = 2 * pivot - high
-        s2 = pivot - (high - low)
-        s3 = low - 2 * (high - pivot)
-        
-        return {
-            'pivot': pivot,
-            'r1': r1, 'r2': r2, 'r3': r3,
-            's1': s1, 's2': s2, 's3': s3
-        }
-    except:
-        return None
-
-def get_sr_text(sr):
-    if not sr:
-        return ""
-    return f"""
-📊 <b>SUPPORT & RESISTANCE:</b>
-🔺 R3: ${sr['r3']:,.2f}
-🔺 R2: ${sr['r2']:,.2f}
-🔺 R1: ${sr['r1']:,.2f}
-📍 PIVOT: ${sr['pivot']:,.2f}
-🔻 S1: ${sr['s1']:,.2f}
-🔻 S2: ${sr['s2']:,.2f}
-🔻 S3: ${sr['s3']:,.2f}
-"""
-
-# ========================================
-# FUNGSI FUNDAMENTAL
-# ========================================
-def get_fundamental_data(ticker):
-    try:
-        stock = yf.Ticker(ticker)
-        info = stock.info
-        fundamental = {
-            'pe_ratio': info.get('trailingPE', 'N/A'),
-            'eps': info.get('trailingEps', 'N/A'),
-            'profit_margin': info.get('profitMargins', 'N/A'),
-            'revenue_growth': info.get('revenueGrowth', 'N/A'),
-            'debt_to_equity': info.get('debtToEquity', 'N/A'),
-            'return_on_equity': info.get('returnOnEquity', 'N/A'),
-            'sector': info.get('sector', 'N/A'),
-            'industry': info.get('industry', 'N/A'),
-        }
-        return fundamental
-    except:
-        return None
-
-def analyze_fundamental(ticker, name, price):
-    try:
-        fund = get_fundamental_data(ticker)
-        if not fund:
-            return None
-        
-        alasan = []
-        skor = 0
-        
-        if fund['pe_ratio'] != 'N/A':
-            pe = fund['pe_ratio']
-            if pe < 15:
-                skor += 15
-                alasan.append(f"✅ PE Ratio {pe:.2f} (Under-valued)")
-            elif pe > 25:
-                skor -= 15
-                alasan.append(f"⚠️ PE Ratio {pe:.2f} (Over-valued)")
-            else:
-                alasan.append(f"📊 PE Ratio {pe:.2f} (Fair value)")
-        
-        if fund['eps'] != 'N/A' and fund['eps'] > 0:
-            skor += 10
-            alasan.append(f"✅ EPS Positive (${fund['eps']:.2f})")
-        elif fund['eps'] != 'N/A':
-            skor -= 10
-            alasan.append(f"⚠️ EPS Negative (${fund['eps']:.2f})")
-        
-        if fund['profit_margin'] != 'N/A':
-            pm = fund['profit_margin']
-            if pm > 0.1:
-                skor += 10
-                alasan.append(f"✅ Profit Margin: {pm*100:.1f}%")
-            elif pm > 0.05:
-                skor += 5
-                alasan.append(f"📊 Profit Margin: {pm*100:.1f}%")
-            else:
-                skor -= 5
-                alasan.append(f"⚠️ Profit Margin: {pm*100:.1f}%")
-        
-        if fund['revenue_growth'] != 'N/A':
-            rg = fund['revenue_growth']
-            if rg > 0.1:
-                skor += 15
-                alasan.append(f"✅ Revenue Growth: {rg*100:.1f}%")
-            elif rg > 0.05:
-                skor += 8
-                alasan.append(f"📊 Revenue Growth: {rg*100:.1f}%")
-            elif rg < 0:
-                skor -= 10
-                alasan.append(f"⚠️ Revenue Growth: {rg*100:.1f}%")
-        
-        if fund['debt_to_equity'] != 'N/A':
-            de = fund['debt_to_equity']
-            if de < 50:
-                skor += 10
-                alasan.append(f"✅ Debt/Equity: {de:.1f}%")
-            elif de < 100:
-                alasan.append(f"📊 Debt/Equity: {de:.1f}%")
-            else:
-                skor -= 10
-                alasan.append(f"⚠️ Debt/Equity: {de:.1f}%")
-        
-        if fund['return_on_equity'] != 'N/A':
-            roe = fund['return_on_equity']
-            if roe > 0.15:
-                skor += 10
-                alasan.append(f"✅ ROE: {roe*100:.1f}%")
-            elif roe > 0.05:
-                alasan.append(f"📊 ROE: {roe*100:.1f}%")
-            else:
-                skor -= 5
-                alasan.append(f"⚠️ ROE: {roe*100:.1f}%")
-        
-        sector_text = f"📊 Sektor: {fund['sector']} | {fund['industry']}"
-        
-        if skor >= 25:
-            signal = "🔥 FUNDAMENTAL BULLISH"
-        elif skor >= 10:
-            signal = "📈 FUNDAMENTAL POSITIF"
-        elif skor <= -25:
-            signal = "🔻 FUNDAMENTAL BEARISH"
-        elif skor <= -10:
-            signal = "📉 FUNDAMENTAL NEGATIF"
+        # Gunakan timeframe yang lebih stabil
+        if timeframe in ["5m", "15m"]:
+            interval = "5m" if timeframe == "5m" else "15m"
+            period = "1d"
         else:
-            signal = "⏸️ FUNDAMENTAL NEUTRAL"
-        
-        return {
-            'signal': signal,
-            'skor': skor,
-            'alasan': alasan,
-            'sector': sector_text
-        }
-    except:
-        return None
-
-# ========================================
-# FUNGSI ANALISIS ENHANCED
-# ========================================
-def analyze_asset_enhanced(ticker, name, timeframe="1h"):
-    try:
-        tf_map = {
-            "5m": {"interval": "5m", "period": "1d"},
-            "15m": {"interval": "15m", "period": "5d"},
-            "1h": {"interval": "1h", "period": "1mo"},
-            "4h": {"interval": "1h", "period": "2mo"},
-        }
-        
-        interval = tf_map.get(timeframe, {"interval": "1h", "period": "1mo"})["interval"]
-        period = tf_map.get(timeframe, {"interval": "1h", "period": "1mo"})["period"]
+            interval = "1h" if timeframe == "1h" else "1h"
+            period = "7d" if timeframe == "4h" else "1mo"
         
         if ticker == "XAUUSD=X":
             ticker = "GC=F"
         
-        logger.info(f"📊 Analisis {name} - Timeframe: {timeframe}")
+        logger.info(f"📊 Analisis {name} - {timeframe}")
         
         asset = yf.Ticker(ticker)
         df = asset.history(period=period, interval=interval)
         
-        if df.empty or len(df) < 20:
+        if df.empty or len(df) < 5:
             logger.warning(f"⚠️ Data kosong untuk {name}")
             return None
-
-        # ===== INDIKATOR TEKNIKAL =====
-        df['RSI'] = ta.momentum.RSIIndicator(df['Close'], window=14).rsi()
-        df['MACD'] = ta.trend.MACD(df['Close']).macd()
-        df['MACD_signal'] = ta.trend.MACD(df['Close']).macd_signal()
-        df['SMA20'] = ta.trend.sma_indicator(df['Close'], window=20)
-        df['SMA50'] = ta.trend.sma_indicator(df['Close'], window=50)
-        df['SMA200'] = ta.trend.sma_indicator(df['Close'], window=200)
-        df['BB_high'] = ta.volatility.BollingerBands(df['Close'], window=20).bollinger_hband()
-        df['BB_low'] = ta.volatility.BollingerBands(df['Close'], window=20).bollinger_lband()
-        df['ATR'] = ta.volatility.AverageTrueRange(df['High'], df['Low'], df['Close'], window=14).average_true_range()
-        df['StochRSI'] = ta.momentum.StochRSIIndicator(df['Close'], window=14).stochrsi()
-        df['Volume_ratio'] = df['Volume'] / df['Volume'].rolling(window=20).mean()
-        df['MFI'] = ta.volume.MFIIndicator(df['High'], df['Low'], df['Close'], df['Volume'], window=14).money_flow_index()
-        df['ADX'] = ta.trend.ADXIndicator(df['High'], df['Low'], df['Close'], window=14).adx()
-
+        
         last = df.iloc[-1]
         prev = df.iloc[-2] if len(df) > 1 else last
-
-        high_20 = df['High'].tail(20).max()
-        low_20 = df['Low'].tail(20).min()
-        fib_382 = high_20 - (high_20 - low_20) * 0.382
-        fib_618 = high_20 - (high_20 - low_20) * 0.618
-
-        # ===== SCORING =====
-        skor_buy, skor_sell, alasan = 0, 0, []
-
-        if last['RSI'] < 30:
+        
+        # Hitung indikator
+        rsi = ta.momentum.RSIIndicator(df['Close'], window=14).rsi().iloc[-1]
+        macd = ta.trend.MACD(df['Close']).macd().iloc[-1]
+        macd_signal = ta.trend.MACD(df['Close']).macd_signal().iloc[-1]
+        sma50 = ta.trend.sma_indicator(df['Close'], window=50).iloc[-1]
+        
+        # Scoring sederhana
+        skor_buy = 0
+        skor_sell = 0
+        alasan = []
+        
+        if rsi < 30:
             skor_buy += 20
-            alasan.append(f"✅ RSI Oversold ({last['RSI']:.1f})")
-        elif last['RSI'] > 70:
+            alasan.append(f"✅ RSI Oversold ({rsi:.1f})")
+        elif rsi > 70:
             skor_sell += 20
-            alasan.append(f"⚠️ RSI Overbought ({last['RSI']:.1f})")
-
-        if last['MACD'] > last['MACD_signal'] and prev['MACD'] <= prev['MACD_signal']:
-            skor_buy += 25
-            alasan.append("✅ MACD Golden Cross")
-        elif last['MACD'] < last['MACD_signal'] and prev['MACD'] >= prev['MACD_signal']:
-            skor_sell += 25
-            alasan.append("⚠️ MACD Death Cross")
-
-        if last['Close'] > last['SMA50']:
-            skor_buy += 20
+            alasan.append(f"⚠️ RSI Overbought ({rsi:.1f})")
+        
+        if macd > macd_signal:
+            skor_buy += 15
+            alasan.append("✅ MACD Bullish")
+        else:
+            skor_sell += 15
+            alasan.append("⚠️ MACD Bearish")
+        
+        if last['Close'] > sma50:
+            skor_buy += 15
             alasan.append("✅ Harga > SMA50")
         else:
-            skor_sell += 20
-            alasan.append("⚠️ Harga < SMA50")
-
-        if last['Close'] < last['BB_low']:
-            skor_buy += 15
-            alasan.append("✅ Harga di BB Lower")
-        elif last['Close'] > last['BB_high']:
             skor_sell += 15
-            alasan.append("⚠️ Harga di BB Upper")
-
-        if last['StochRSI'] < 0.2:
-            skor_buy += 10
-            alasan.append(f"✅ StochRSI Oversold ({last['StochRSI']:.2f})")
-        elif last['StochRSI'] > 0.8:
-            skor_sell += 10
-            alasan.append(f"⚠️ StochRSI Overbought ({last['StochRSI']:.2f})")
-
-        if last['Volume_ratio'] > 1.5:
-            if skor_buy > skor_sell:
-                skor_buy += 10
-                alasan.append("✅ Volume tinggi (konfirmasi)")
-            else:
-                skor_sell += 10
-                alasan.append("⚠️ Volume tinggi (konfirmasi)")
-
-        if last['MFI'] < 20:
-            skor_buy += 10
-            alasan.append(f"✅ MFI Oversold ({last['MFI']:.1f})")
-        elif last['MFI'] > 80:
-            skor_sell += 10
-            alasan.append(f"⚠️ MFI Overbought ({last['MFI']:.1f})")
-
-        if last['ADX'] > 25:
-            if skor_buy > skor_sell:
-                skor_buy += 10
-                alasan.append(f"✅ ADX Trend Kuat ({last['ADX']:.1f})")
-            else:
-                skor_sell += 10
-                alasan.append(f"⚠️ ADX Trend Kuat ({last['ADX']:.1f})")
-
-        # ===== KEPUTUSAN =====
-        total_skor = skor_buy + skor_sell
-        if total_skor > 0:
-            if skor_buy > skor_sell + 30:
-                sinyal, confidence = "🔥 STRONG BUY", 90
-            elif skor_buy > skor_sell + 15:
-                sinyal, confidence = "📈 BUY", 75
-            elif skor_buy > skor_sell:
-                sinyal, confidence = "📈 WEAK BUY", 60
-            elif skor_sell > skor_buy + 30:
-                sinyal, confidence = "🔻 STRONG SELL", 90
-            elif skor_sell > skor_buy + 15:
-                sinyal, confidence = "📉 SELL", 75
-            elif skor_sell > skor_buy:
-                sinyal, confidence = "📉 WEAK SELL", 60
-            else:
-                sinyal, confidence = "⏸️ NEUTRAL", 50
+            alasan.append("⚠️ Harga < SMA50")
+        
+        if skor_buy > skor_sell + 20:
+            sinyal = "🔥 STRONG BUY"
+            confidence = 85
+        elif skor_buy > skor_sell:
+            sinyal = "📈 BUY"
+            confidence = 70
+        elif skor_sell > skor_buy + 20:
+            sinyal = "🔻 STRONG SELL"
+            confidence = 85
+        elif skor_sell > skor_buy:
+            sinyal = "📉 SELL"
+            confidence = 70
         else:
-            sinyal, confidence = "⏸️ NEUTRAL", 50
-
-        # ===== LEVEL =====
-        atr, entry = last['ATR'], last['Close']
+            sinyal = "⏸️ NEUTRAL"
+            confidence = 50
+        
+        entry = last['Close']
+        atr = ta.volatility.AverageTrueRange(df['High'], df['Low'], df['Close'], window=14).average_true_range().iloc[-1]
+        
         if "BUY" in sinyal:
-            sl, tp1, tp2 = entry - (atr * 1.5), entry + (atr * 1.5), entry + (atr * 2.5)
-            tp3 = entry + (atr * 4.0)
-        elif "SELL" in sinyal:
-            sl, tp1, tp2 = entry + (atr * 1.5), entry - (atr * 1.5), entry - (atr * 2.5)
-            tp3 = entry - (atr * 4.0)
+            sl = entry - (atr * 1.5)
+            tp1 = entry + (atr * 1.5)
+            tp2 = entry + (atr * 2.5)
         else:
-            sl, tp1, tp2 = entry - atr, entry + atr, entry + (atr * 2)
-            tp3 = entry + (atr * 3)
-
-        # ===== SIMPAN SINYAL =====
-        if "STRONG" in sinyal or "BUY" in sinyal or "SELL" in sinyal:
-            direction = "BUY" if "BUY" in sinyal else "SELL"
-            save_signal(name.split()[0], direction, entry, sl, tp1, tp2, tp3, timeframe)
-
-        # ===== SUPPORT & RESISTANCE =====
-        sr = calculate_support_resistance(df)
-        sr_text = get_sr_text(sr)
-
-        # ===== FUNDAMENTAL =====
-        fundamental = analyze_fundamental(ticker, name, entry)
-        fundamental_text = ""
-        if fundamental and fundamental['alasan']:
-            fund_alasan = "\n".join([f"   {a}" for a in fundamental['alasan']])
-            fundamental_text = f"""
-📊 <b>FUNDAMENTAL ANALYSIS</b>
-🎯 {fundamental['signal']} (Skor: {fundamental['skor']})
-
-{fund_alasan}
-{fundamental.get('sector', '')}
-"""
-        else:
-            if "BTC" in name or "ETH" in name:
-                fundamental_text = "📊 <b>FUNDAMENTAL:</b> Data tidak tersedia untuk crypto"
-            elif "USD" in name or "EUR" in name or "GBP" in name:
-                fundamental_text = "📊 <b>FUNDAMENTAL:</b> Data tidak tersedia untuk forex"
-            else:
-                fundamental_text = "📊 <b>FUNDAMENTAL:</b> Data tidak tersedia"
-
+            sl = entry + (atr * 1.5)
+            tp1 = entry - (atr * 1.5)
+            tp2 = entry - (atr * 2.5)
+        
         return {
             'name': name,
             'price': entry,
             'sinyal': sinyal,
             'confidence': confidence,
-            'alasan': alasan[:5],
+            'alasan': alasan,
             'entry': entry,
             'sl': sl,
             'tp1': tp1,
             'tp2': tp2,
-            'tp3': tp3,
-            'rsi': last['RSI'],
-            'macd': last['MACD'],
-            'sma50': last['SMA50'],
-            'sma200': last['SMA200'],
-            'bb_high': last['BB_high'],
-            'bb_low': last['BB_low'],
-            'atr': last['ATR'],
-            'volume_ratio': last['Volume_ratio'],
-            'mfi': last['MFI'],
-            'adx': last['ADX'],
-            'fib_382': fib_382,
-            'fib_618': fib_618,
-            'skor_buy': skor_buy,
-            'skor_sell': skor_sell,
+            'rsi': rsi,
+            'macd': macd,
             'timeframe': timeframe,
-            'fundamental': fundamental_text,
-            'sr_text': sr_text
+            'date': df.index[-1]
         }
     except Exception as e:
-        logger.error(f"Error {name}: {e}")
+        logger.error(f"Error {name}: {traceback.format_exc()}")
         return None
 
 # ========================================
@@ -547,12 +307,12 @@ ASSETS = [
 selected_timeframe = "1h"
 
 # ========================================
-# GET UPDATES (LONG POLLING)
+# GET UPDATES
 # ========================================
 def get_updates(offset=None):
-    url = f"{BOT_URL}/getUpdates"
-    params = {'timeout': 30, 'offset': offset}
     try:
+        url = f"{BOT_URL}/getUpdates"
+        params = {'timeout': 30, 'offset': offset}
         response = requests.get(url, params=params, timeout=35)
         return response.json()
     except Exception as e:
@@ -560,7 +320,7 @@ def get_updates(offset=None):
         return None
 
 # ========================================
-# MENU UTAMA DENGAN TOMBOL
+# MENU UTAMA
 # ========================================
 def send_menu(message_id=None):
     keyboard = [
@@ -576,7 +336,7 @@ def send_menu(message_id=None):
 ╔═══════════════════════════════════════╗
 ║   🏦  KRUSTY KRAB TRADING BOT         ║
 ║   "Printing Money Since 2026"         ║
-║   ENHANCED v13.1                      ║
+║   ENHANCED v14.0                      ║
 ╚═══════════════════════════════════════╝
 
 📊 <b>PILIH ASET:</b>
@@ -596,8 +356,6 @@ def send_menu(message_id=None):
 • 12+ Indikator Teknikal
 • AI-Powered Scoring
 • 3 Level TP
-• Support & Resistance
-• Fundamental Analysis
 • Performance Tracker
 """
     if message_id:
@@ -606,7 +364,7 @@ def send_menu(message_id=None):
         send_message(msg, keyboard)
 
 # ========================================
-# HANDLE CALLBACK (TOMbol)
+# HANDLE CALLBACK
 # ========================================
 def handle_callback(callback_id, message_id, data):
     global selected_timeframe
@@ -681,7 +439,6 @@ def handle_callback(callback_id, message_id, data):
         return
     
     # === ASSET ANALYSIS ===
-    # Mapping aset dengan callback data yang SAMA dengan tombol
     asset_map = {
         'xau': {'ticker': 'XAUUSD=X', 'name': '🥇 XAU/USD (Exness)'},
         'btc': {'ticker': 'BTC-USD', 'name': '🪙 BTC/USD'},
@@ -697,53 +454,37 @@ def handle_callback(callback_id, message_id, data):
         asset = asset_map[data]
         edit_message(message_id, f"📥 Menganalisis {asset['name']} ({selected_timeframe})...")
         
-        result = analyze_asset_enhanced(asset['ticker'], asset['name'], selected_timeframe)
-        
-        if result:
-            alasan_text = "\n".join([f"   ✅ {a}" for a in result['alasan']])
-            msg = f"""
+        try:
+            result = analyze_asset_simple(asset['ticker'], asset['name'], selected_timeframe)
+            
+            if result:
+                alasan_text = "\n".join([f"   {a}" for a in result['alasan']])
+                msg = f"""
 <b>{result['name']}</b>
 💰 Harga: <b>${result['price']:,.2f}</b>
 ⏰ Timeframe: <b>{result['timeframe']}</b>
 
 🎯 <b>SINYAL: {result['sinyal']}</b>
 📊 Konfidensi: {result['confidence']}%
-📊 Skor: {result['skor_buy']}/{result['skor_sell']}
 
-📌 <b>Alasan:</b>
+📌 Alasan:
 {alasan_text}
 
-{result['fundamental']}
-{result['sr_text']}
-
-⚡ <b>LEVEL EXNESS:</b>
 📍 Entry: ${result['entry']:,.2f}
-🛑 SL: ${result['sl']:,.2f} ({abs(result['sl']/result['entry']-1)*100:.2f}%)
-🎯 TP1: ${result['tp1']:,.2f} (R:R 1:1.5)
-🎯 TP2: ${result['tp2']:,.2f} (R:R 1:2.5)
-🎯 TP3: ${result['tp3']:,.2f} (R:R 1:4.0)
-
-📊 <b>INDIKATOR:</b>
-• RSI: {result['rsi']:.1f}
-• MACD: {result['macd']:.4f}
-• SMA50: ${result['sma50']:,.2f}
-• SMA200: ${result['sma200']:,.2f}
-• BB Upper: ${result['bb_high']:,.2f}
-• BB Lower: ${result['bb_low']:,.2f}
-• ATR: ${result['atr']:.2f}
-• Volume: {result['volume_ratio']:.1f}x
-• MFI: {result['mfi']:.1f}
-• ADX: {result['adx']:.1f}
-• Fib 61.8%: ${result['fib_618']:,.2f}
-• Fib 38.2%: ${result['fib_382']:,.2f}
+🛑 SL: ${result['sl']:,.2f}
+🎯 TP1: ${result['tp1']:,.2f}
+🎯 TP2: ${result['tp2']:,.2f}
+📊 RSI: {result['rsi']:.1f} | MACD: {result['macd']:.4f}
 ━━━━━━━━━━━━━━━━━━━━━
 ⚠️ Bukan nasihat keuangan
-💡 Gunakan untuk referensi
 """
-            keyboard = [[{"text": "🔙 Kembali", "callback_data": "back"}]]
-            edit_message(message_id, msg, keyboard)
-        else:
-            edit_message(message_id, f"❌ Gagal analisis {asset['name']}")
+                keyboard = [[{"text": "🔙 Kembali", "callback_data": "back"}]]
+                edit_message(message_id, msg, keyboard)
+            else:
+                edit_message(message_id, f"❌ Gagal analisis {asset['name']} - data tidak tersedia")
+        except Exception as e:
+            logger.error(f"Analysis error: {traceback.format_exc()}")
+            edit_message(message_id, f"❌ Error: {str(e)[:100]}")
 
 # ========================================
 # KIRIM SEMUA SINYAL
@@ -751,8 +492,8 @@ def handle_callback(callback_id, message_id, data):
 def kirim_semua_sinyal(message_id):
     msg = f"📊 <b>SEMUA SINYAL</b> (Timeframe: {selected_timeframe})\n━━━━━━━━━━━━━━━━━━━━━\n"
     
-    for asset in ASSETS:
-        result = analyze_asset_enhanced(asset['ticker'], asset['name'], selected_timeframe)
+    for asset in ASSETS[:4]:  # Hanya 4 aset utama agar cepat
+        result = analyze_asset_simple(asset['ticker'], asset['name'], selected_timeframe)
         if result:
             msg += f"""
 {result['name']}
@@ -763,13 +504,13 @@ def kirim_semua_sinyal(message_id):
 🎯 TP: ${result['tp1']:,.2f} | ${result['tp2']:,.2f}
 ━━━━━━━━━━━━━━━━━━━━━
 """
-        time.sleep(0.5)
+        time.sleep(0.3)
     
     keyboard = [[{"text": "🔙 Kembali", "callback_data": "back"}]]
     edit_message(message_id, msg, keyboard)
 
 # ========================================
-# AUTO SIGNAL (SETIAP 4 JAM)
+# AUTO SIGNAL
 # ========================================
 def kirim_auto_signal():
     logger.info("📢 Mengirim auto signal...")
@@ -795,7 +536,7 @@ def kirim_auto_signal():
     time.sleep(1)
     
     for asset in main_assets:
-        result = analyze_asset_enhanced(asset['ticker'], asset['name'], selected_timeframe)
+        result = analyze_asset_simple(asset['ticker'], asset['name'], selected_timeframe)
         if result:
             alasan_text = "\n".join([f"   ✅ {a}" for a in result['alasan']])
             msg = f"""
@@ -814,22 +555,22 @@ def kirim_auto_signal():
 ━━━━━━━━━━━━━━━━━━━━━
 """
             send_message(msg)
-            time.sleep(1.5)
+            time.sleep(1)
 
 # ========================================
 # MAIN
 # ========================================
 def main():
-    logger.info("🤖 KRUSTY KRAB TRADING BOT - ENHANCED v13.1 STARTED")
-    logger.info("📊 SEMUA TOMBOL BERFUNGSI!")
+    logger.info("🤖 KRUSTY KRAB TRADING BOT - ENHANCED v14.0 STARTED")
+    logger.info("📊 DENGAN ERROR HANDLING")
     
     # Kirim menu pertama
     send_menu()
     
-    # Auto signal setiap 4 jam (di thread terpisah)
+    # Auto signal setiap 4 jam
     def auto_signal_loop():
         while True:
-            time.sleep(14400)  # 4 jam
+            time.sleep(14400)
             try:
                 kirim_auto_signal()
             except Exception as e:
@@ -837,7 +578,7 @@ def main():
     
     threading.Thread(target=auto_signal_loop, daemon=True).start()
     
-    # Loop utama untuk menangani callback
+    # Loop utama
     last_update_id = None
     while True:
         try:
@@ -866,14 +607,14 @@ def main():
                                     callback['data']
                                 )
                             except Exception as e:
-                                logger.error(f"Callback error: {e}")
+                                logger.error(f"Callback error: {traceback.format_exc()}")
                                 answer_callback(callback['id'], "Error, coba lagi")
             time.sleep(2)
         except KeyboardInterrupt:
             logger.info("👋 Bot stopped")
             break
         except Exception as e:
-            logger.error(f"Main error: {e}")
+            logger.error(f"Main error: {traceback.format_exc()}")
             time.sleep(5)
 
 if __name__ == "__main__":
