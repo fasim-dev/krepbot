@@ -2,5 +2,3 @@ yfinance
 pandas
 ta
 requests
-flask
-gunicorn
