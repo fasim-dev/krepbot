@@ -1,6 +1,6 @@
 # ========================================
-# KRUSTY KRAB TRADING BOT - ENHANCED v13.0
-# DENGAN TOMBOL INTERAKTIF + AUTO SIGNAL
+# KRUSTY KRAB TRADING BOT - ENHANCED v13.1
+# SEMUA TOMBOL BERFUNGSI!
 # FILE: krepbot.py
 # ========================================
 
@@ -33,8 +33,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 print("="*60)
-print("🏦 KRUSTY KRAB TRADING BOT - ENHANCED v13.0")
-print("📊 DENGAN TOMBOL INTERAKTIF")
+print("🏦 KRUSTY KRAB TRADING BOT - ENHANCED v13.1")
+print("📊 SEMUA TOMBOL BERFUNGSI!")
 print(f"🤖 Bot: @krepXau_bot")
 print("="*60)
 
@@ -564,7 +564,7 @@ def get_updates(offset=None):
 # ========================================
 def send_menu(message_id=None):
     keyboard = [
-        [{"text": "⏰ TIMEFRAME", "callback_data": "tf"}],
+        [{"text": "⏰ TIMEFRAME", "callback_data": "timeframe"}],
         [{"text": "🥇 XAU/USD", "callback_data": "xau"}, {"text": "🪙 BTC/USD", "callback_data": "btc"}],
         [{"text": "⚡ ETH/USD", "callback_data": "eth"}, {"text": "💶 EUR/USD", "callback_data": "eur"}],
         [{"text": "💷 GBP/USD", "callback_data": "gbp"}, {"text": "💴 USD/JPY", "callback_data": "usd"}],
@@ -576,7 +576,7 @@ def send_menu(message_id=None):
 ╔═══════════════════════════════════════╗
 ║   🏦  KRUSTY KRAB TRADING BOT         ║
 ║   "Printing Money Since 2026"         ║
-║   ENHANCED v13.0 - DENGAN TOMBOL      ║
+║   ENHANCED v13.1                      ║
 ╚═══════════════════════════════════════╝
 
 📊 <b>PILIH ASET:</b>
@@ -614,23 +614,37 @@ def handle_callback(callback_id, message_id, data):
     logger.info(f"📥 Callback: {data}")
     
     # === TIMEFRAME ===
-    if data == "tf":
+    if data == "timeframe":
         keyboard = [
-            [{"text": "🕐 5 Menit", "callback_data": "tf_5m"}, {"text": "🕐 15 Menit", "callback_data": "tf_15m"}],
-            [{"text": "🕐 1 Jam", "callback_data": "tf_1h"}, {"text": "🕐 4 Jam", "callback_data": "tf_4h"}],
-            [{"text": "🔙 Kembali", "callback_data": "menu"}],
+            [{"text": "🕐 5 Menit", "callback_data": "tf5"}, {"text": "🕐 15 Menit", "callback_data": "tf15"}],
+            [{"text": "🕐 1 Jam", "callback_data": "tf1"}, {"text": "🕐 4 Jam", "callback_data": "tf4"}],
+            [{"text": "🔙 Kembali", "callback_data": "back"}],
         ]
         edit_message(message_id, f"⏰ Pilih Timeframe:\nSaat ini: {selected_timeframe}", keyboard)
         return
     
-    if data in ["tf_5m", "tf_15m", "tf_1h", "tf_4h"]:
-        tf_map = {"tf_5m": "5m", "tf_15m": "15m", "tf_1h": "1h", "tf_4h": "4h"}
-        selected_timeframe = tf_map[data]
-        edit_message(message_id, f"✅ Timeframe: {selected_timeframe}")
+    if data == "tf5":
+        selected_timeframe = "5m"
+        edit_message(message_id, f"✅ Timeframe: 5 Menit")
+        send_menu(message_id)
+        return
+    elif data == "tf15":
+        selected_timeframe = "15m"
+        edit_message(message_id, f"✅ Timeframe: 15 Menit")
+        send_menu(message_id)
+        return
+    elif data == "tf1":
+        selected_timeframe = "1h"
+        edit_message(message_id, f"✅ Timeframe: 1 Jam")
+        send_menu(message_id)
+        return
+    elif data == "tf4":
+        selected_timeframe = "4h"
+        edit_message(message_id, f"✅ Timeframe: 4 Jam")
         send_menu(message_id)
         return
     
-    if data == "menu":
+    if data == "back":
         send_menu(message_id)
         return
     
@@ -656,7 +670,7 @@ def handle_callback(callback_id, message_id, data):
             asset_winrate = round((win / total) * 100, 1) if total > 0 else 0
             msg += f"\n{asset}: {total} sinyal | {asset_winrate}% | ${profit or 0:,.2f}"
         
-        keyboard = [[{"text": "🔙 Kembali", "callback_data": "menu"}]]
+        keyboard = [[{"text": "🔙 Kembali", "callback_data": "back"}]]
         edit_message(message_id, msg, keyboard)
         return
     
@@ -667,6 +681,7 @@ def handle_callback(callback_id, message_id, data):
         return
     
     # === ASSET ANALYSIS ===
+    # Mapping aset dengan callback data yang SAMA dengan tombol
     asset_map = {
         'xau': {'ticker': 'XAUUSD=X', 'name': '🥇 XAU/USD (Exness)'},
         'btc': {'ticker': 'BTC-USD', 'name': '🪙 BTC/USD'},
@@ -725,7 +740,7 @@ def handle_callback(callback_id, message_id, data):
 ⚠️ Bukan nasihat keuangan
 💡 Gunakan untuk referensi
 """
-            keyboard = [[{"text": "🔙 Kembali", "callback_data": "menu"}]]
+            keyboard = [[{"text": "🔙 Kembali", "callback_data": "back"}]]
             edit_message(message_id, msg, keyboard)
         else:
             edit_message(message_id, f"❌ Gagal analisis {asset['name']}")
@@ -750,7 +765,7 @@ def kirim_semua_sinyal(message_id):
 """
         time.sleep(0.5)
     
-    keyboard = [[{"text": "🔙 Kembali", "callback_data": "menu"}]]
+    keyboard = [[{"text": "🔙 Kembali", "callback_data": "back"}]]
     edit_message(message_id, msg, keyboard)
 
 # ========================================
@@ -805,8 +820,8 @@ def kirim_auto_signal():
 # MAIN
 # ========================================
 def main():
-    logger.info("🤖 KRUSTY KRAB TRADING BOT - ENHANCED v13.0 STARTED")
-    logger.info("📊 DENGAN TOMBOL INTERAKTIF")
+    logger.info("🤖 KRUSTY KRAB TRADING BOT - ENHANCED v13.1 STARTED")
+    logger.info("📊 SEMUA TOMBOL BERFUNGSI!")
     
     # Kirim menu pertama
     send_menu()
@@ -863,4 +878,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
