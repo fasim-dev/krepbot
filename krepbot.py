@@ -1,8 +1,7 @@
 # ========================================
-# KRUSTY KRAB TRADING BOT - FULL EDITION v10.0
-# XAU/USD (EXNESS) | BTC | ETH | FOREX MAJOR
+# KRUSTY KRAB TRADING BOT - FULL EDITION
+# XAU/USD (EXNESS) | BTC, ETH | FOREX MAJOR
 # TIMEFRAME: 5M, 15M, 1H, 4H
-# DENGAN TIMEFRAME & FUNDAMENTAL DI LAPORAN
 # ========================================
 
 import os
@@ -33,9 +32,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 print("="*60)
-print("🏦 KRUSTY KRAB TRADING BOT - FULL EDITION v10.0")
-print("📊 XAU/USD (EXNESS) | BTC | ETH | FOREX MAJOR")
-print("📊 TIMEFRAME: 5M | 15M | 1H | 4H")
+print("🏦 KRUSTY KRAB TRADING BOT - FULL EDITION")
+print("📊 XAU/USD (EXNESS) | BTC | ETH | FOREX")
 print(f"🤖 Bot: @krepXau_bot")
 print("="*60)
 
@@ -149,7 +147,6 @@ def answer_callback(callback_id, text=""):
 # FUNGSI FUNDAMENTAL
 # ========================================
 def get_fundamental_data(ticker):
-    """Ambil data fundamental dari Yahoo Finance"""
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
@@ -162,14 +159,12 @@ def get_fundamental_data(ticker):
             'return_on_equity': info.get('returnOnEquity', 'N/A'),
             'sector': info.get('sector', 'N/A'),
             'industry': info.get('industry', 'N/A'),
-            'long_name': info.get('longName', 'N/A'),
         }
         return fundamental
     except:
         return None
 
 def analyze_fundamental(ticker, name, price):
-    """Analisis fundamental untuk menghasilkan sinyal tambahan"""
     try:
         fund = get_fundamental_data(ticker)
         if not fund:
@@ -178,7 +173,6 @@ def analyze_fundamental(ticker, name, price):
         alasan = []
         skor = 0
         
-        # PE Ratio
         if fund['pe_ratio'] != 'N/A':
             pe = fund['pe_ratio']
             if pe < 15:
@@ -190,68 +184,19 @@ def analyze_fundamental(ticker, name, price):
             else:
                 alasan.append(f"📊 PE Ratio {pe:.2f} (Fair value)")
         
-        # EPS
         if fund['eps'] != 'N/A' and fund['eps'] > 0:
             skor += 10
             alasan.append(f"✅ EPS Positive (${fund['eps']:.2f})")
-        elif fund['eps'] != 'N/A':
-            skor -= 10
-            alasan.append(f"⚠️ EPS Negative (${fund['eps']:.2f})")
         
-        # Profit Margin
         if fund['profit_margin'] != 'N/A':
             pm = fund['profit_margin']
             if pm > 0.1:
                 skor += 10
                 alasan.append(f"✅ Profit Margin: {pm*100:.1f}%")
-            elif pm > 0.05:
-                skor += 5
-                alasan.append(f"📊 Profit Margin: {pm*100:.1f}%")
             else:
                 skor -= 5
                 alasan.append(f"⚠️ Profit Margin: {pm*100:.1f}%")
         
-        # Revenue Growth
-        if fund['revenue_growth'] != 'N/A':
-            rg = fund['revenue_growth']
-            if rg > 0.1:
-                skor += 15
-                alasan.append(f"✅ Revenue Growth: {rg*100:.1f}%")
-            elif rg > 0.05:
-                skor += 8
-                alasan.append(f"📊 Revenue Growth: {rg*100:.1f}%")
-            elif rg < 0:
-                skor -= 10
-                alasan.append(f"⚠️ Revenue Growth: {rg*100:.1f}%")
-        
-        # Debt to Equity
-        if fund['debt_to_equity'] != 'N/A':
-            de = fund['debt_to_equity']
-            if de < 50:
-                skor += 10
-                alasan.append(f"✅ Debt/Equity: {de:.1f}%")
-            elif de < 100:
-                alasan.append(f"📊 Debt/Equity: {de:.1f}%")
-            else:
-                skor -= 10
-                alasan.append(f"⚠️ Debt/Equity: {de:.1f}%")
-        
-        # ROE
-        if fund['return_on_equity'] != 'N/A':
-            roe = fund['return_on_equity']
-            if roe > 0.15:
-                skor += 10
-                alasan.append(f"✅ ROE: {roe*100:.1f}%")
-            elif roe > 0.05:
-                alasan.append(f"📊 ROE: {roe*100:.1f}%")
-            else:
-                skor -= 5
-                alasan.append(f"⚠️ ROE: {roe*100:.1f}%")
-        
-        # Sektor
-        sector_text = f"📊 Sektor: {fund['sector']} | {fund['industry']}"
-        
-        # Kesimpulan
         if skor >= 25:
             signal = "🔥 FUNDAMENTAL BULLISH"
         elif skor >= 10:
@@ -262,6 +207,8 @@ def analyze_fundamental(ticker, name, price):
             signal = "📉 FUNDAMENTAL NEGATIF"
         else:
             signal = "⏸️ FUNDAMENTAL NEUTRAL"
+        
+        sector_text = f"📊 Sektor: {fund['sector']} | {fund['industry']}"
         
         return {
             'signal': signal,
@@ -437,20 +384,11 @@ def analyze_asset(ticker, name, timeframe="1h"):
         if fundamental and fundamental['alasan']:
             fund_alasan = "\n".join([f"   {a}" for a in fundamental['alasan']])
             fundamental_text = f"""
-📊 <b>FUNDAMENTAL ANALYSIS</b>
-🎯 {fundamental['signal']} (Skor: {fundamental['skor']})
-
+📊 <b>FUNDAMENTAL</b>
+🎯 {fundamental['signal']}
 {fund_alasan}
 {fundamental.get('sector', '')}
 """
-        else:
-            # Jika tidak ada data fundamental (crypto, forex)
-            if "BTC" in name or "ETH" in name:
-                fundamental_text = "📊 <b>FUNDAMENTAL:</b> Data tidak tersedia untuk crypto"
-            elif "USD" in name or "EUR" in name or "GBP" in name:
-                fundamental_text = "📊 <b>FUNDAMENTAL:</b> Data tidak tersedia untuk forex"
-            else:
-                fundamental_text = "📊 <b>FUNDAMENTAL:</b> Data tidak tersedia"
 
         return {
             'name': name,
@@ -659,7 +597,7 @@ def send_menu(message_id=None):
 ╔═══════════════════════════════════════╗
 ║   🏦  KRUSTY KRAB TRADING BOT         ║
 ║   "Printing Money Since 2026"         ║
-║   FULL EDITION v10.0                  ║
+║   FULL EDITION v9.0                   ║
 ╚═══════════════════════════════════════╝
 
 📊 <b>PILIH ASET:</b>
@@ -728,7 +666,7 @@ def get_updates(offset=None):
 # MAIN
 # ========================================
 def main():
-    logger.info("🤖 KRUSTY KRAB TRADING BOT v10.0 STARTED")
+    logger.info("🤖 KRUSTY KRAB TRADING BOT - FULL EDITION")
     logger.info("📊 XAU/USD (EXNESS) | BTC | ETH | FOREX MAJOR")
     logger.info("📌 Kirim /start ke @krepXau_bot")
     
