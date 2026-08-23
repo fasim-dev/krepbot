@@ -1,8 +1,6 @@
 # ========================================
-# KRUSTY KRAB TRADING BOT - ULTIMATE EDITION v11.0
-# XAU/USD (EXNESS) | BTC | ETH | FOREX MAJOR
-# TIMEFRAME: 5M, 15M, 1H, 4H
-# DENGAN SUPPORT/RESISTANCE, AUTO CLOSE, NOTIFIKASI
+# KRUSTY KRAB TRADING BOT - ULTIMATE EDITION v11.1
+# FIXED: CALLBACK & SCHEDULER
 # ========================================
 
 import os
@@ -13,7 +11,6 @@ import requests
 import time
 import sqlite3
 import json
-import schedule
 import threading
 from datetime import datetime, timedelta
 import logging
@@ -35,10 +32,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 print("="*60)
-print("🏦 KRUSTY KRAB TRADING BOT - ULTIMATE EDITION v11.0")
-print("📊 XAU/USD (EXNESS) | BTC | ETH | FOREX MAJOR")
-print("📊 TIMEFRAME: 5M | 15M | 1H | 4H")
-print("📊 NOTIFIKASI OTOMATIS | SUPPORT/RESISTANCE")
+print("🏦 KRUSTY KRAB TRADING BOT - ULTIMATE EDITION v11.1")
+print("📊 FIXED: CALLBACK & SCHEDULER")
 print(f"🤖 Bot: @krepXau_bot")
 print("="*60)
 
@@ -101,7 +96,6 @@ def save_signal(asset, signal_type, entry, sl, tp1, tp2, tp3, timeframe="1h"):
     conn.close()
 
 def close_expired_signals():
-    """Tutup sinyal yang sudah kadaluarsa (>24 jam)"""
     conn = sqlite3.connect('trading_history.db')
     c = conn.cursor()
     c.execute('''
@@ -144,7 +138,7 @@ def send_message(text, keyboard=None):
     if keyboard:
         payload['reply_markup'] = json.dumps({'inline_keyboard': keyboard})
     try:
-        response = requests.post(url, json=payload, timeout=30)
+        response = requests.post(url, json=payload, timeout=60)
         if response.status_code == 200:
             logger.info("✅ Pesan terkirim!")
             return response.json()
@@ -161,7 +155,7 @@ def edit_message(message_id, text, keyboard=None):
     if keyboard:
         payload['reply_markup'] = json.dumps({'inline_keyboard': keyboard})
     try:
-        response = requests.post(url, json=payload, timeout=30)
+        response = requests.post(url, json=payload, timeout=60)
         return response.json()
     except Exception as e:
         logger.error(f"❌ Edit error: {e}")
@@ -553,69 +547,12 @@ ASSETS = [
 selected_timeframe = "1h"
 
 # ========================================
-# NOTIFIKASI OTOMATIS
+# NOTIFIKASI OTOMATIS (DI-NONAKTIFKAN SEMENTARA)
 # ========================================
 def send_auto_signal():
-    """Kirim sinyal otomatis setiap 4 jam"""
-    logger.info("📢 Mengirim notifikasi otomatis...")
-    
-    # Tutup sinyal expired dulu
-    close_expired_signals()
-    
-    # Kirim sinyal untuk aset utama
-    main_assets = [
-        {"ticker": "XAUUSD=X", "name": "🥇 XAU/USD (Exness)"},
-        {"ticker": "BTC-USD", "name": "🪙 BTC/USD"},
-        {"ticker": "ETH-USD", "name": "⚡ ETH/USD"},
-    ]
-    
-    msg = f"""
-╔═══════════════════════════════════════╗
-║   🔔 NOTIFIKASI OTOMATIS              ║
-║   ⏰ {datetime.now().strftime('%Y-%m-%d %H:%M')} WIB  ║
-╚═══════════════════════════════════════╝
-
-📊 <b>SINYAL HARIAN</b>
-⏰ Timeframe: <b>{selected_timeframe}</b>
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
-    send_message(msg)
-    time.sleep(1)
-    
-    for asset in main_assets:
-        result = analyze_asset(asset['ticker'], asset['name'], selected_timeframe)
-        if result:
-            alasan_text = "\n".join([f"   {a}" for a in result['alasan']])
-            msg = f"""
-<b>{result['name']}</b>
-💰 Harga: <b>${result['price']:,.2f}</b>
-🎯 <b>SINYAL: {result['sinyal']}</b>
-📊 Konfidensi: {result['confidence']}%
-
-📌 Alasan:
-{alasan_text}
-
-📍 Entry: ${result['entry']:,.2f}
-🛑 SL: ${result['sl']:,.2f}
-🎯 TP1: ${result['tp1']:,.2f}
-🎯 TP2: ${result['tp2']:,.2f}
-━━━━━━━━━━━━━━━━━━━━━
-"""
-            send_message(msg)
-            time.sleep(1.5)
-
-def start_scheduler():
-    """Jalankan scheduler untuk notifikasi otomatis"""
-    # Kirim setiap 4 jam
-    schedule.every(4).hours.do(send_auto_signal)
-    
-    # Kirim sinyal pertama saat startup
-    time.sleep(5)
-    send_auto_signal()
-    
-    while True:
-        schedule.run_pending()
-        time.sleep(30)
+    """Kirim sinyal otomatis - DINONAKTIFKAN SEMENTARA"""
+    logger.info("📢 Notifikasi otomatis DINONAKTIFKAN untuk debugging")
+    # Fungsi ini sengaja dikosongkan agar tidak mengganggu callback
 
 # ========================================
 # HANDLE CALLBACK
@@ -706,7 +643,11 @@ def handle_callback(callback_id, message_id, data):
     
     if data in asset_map and data != 'all':
         asset = asset_map[data]
+        
+        # Kirim pesan "Menganalisis..."
         edit_message(message_id, f"📥 Menganalisis {asset['name']} (Timeframe: {selected_timeframe})...")
+        
+        # Proses analisis
         result = analyze_asset(asset['ticker'], asset['name'], selected_timeframe)
         
         if result:
@@ -772,7 +713,7 @@ def send_menu(message_id=None):
 ╔═══════════════════════════════════════╗
 ║   🏦  KRUSTY KRAB TRADING BOT         ║
 ║   "Printing Money Since 2026"         ║
-║   ULTIMATE EDITION v11.0              ║
+║   ULTIMATE EDITION v11.1              ║
 ╚═══════════════════════════════════════╝
 
 📊 <b>PILIH ASET:</b>
@@ -798,7 +739,6 @@ def send_menu(message_id=None):
 • Fundamental Analysis
 • Support & Resistance
 • Auto Close Signal (24 jam)
-• Notifikasi Otomatis (4 jam sekali)
 """
     if message_id:
         edit_message(message_id, msg, keyboard)
@@ -842,11 +782,11 @@ def get_updates(offset=None):
         return None
 
 # ========================================
-# MAIN
+# MAIN - TANPA SCHEDULER
 # ========================================
 def main():
-    logger.info("🤖 KRUSTY KRAB TRADING BOT v11.0 STARTED")
-    logger.info("📊 ULTIMATE EDITION - ALL FEATURES")
+    logger.info("🤖 KRUSTY KRAB TRADING BOT v11.1 STARTED")
+    logger.info("📊 FIXED: CALLBACK & SCHEDULER DINONAKTIFKAN")
     logger.info("📌 Kirim /start ke @krepXau_bot")
     
     # Tutup sinyal expired
@@ -854,10 +794,6 @@ def main():
     
     # Kirim menu pertama
     send_menu()
-    
-    # Start scheduler di thread terpisah
-    scheduler_thread = threading.Thread(target=start_scheduler, daemon=True)
-    scheduler_thread.start()
     
     last_update_id = None
     while True:
@@ -877,11 +813,15 @@ def main():
                         callback = update['callback_query']
                         chat_id = str(callback['message']['chat']['id'])
                         if chat_id == CHAT_ID:
-                            handle_callback(
-                                callback['id'],
-                                callback['message']['message_id'],
-                                callback['data']
-                            )
+                            try:
+                                handle_callback(
+                                    callback['id'],
+                                    callback['message']['message_id'],
+                                    callback['data']
+                                )
+                            except Exception as e:
+                                logger.error(f"Callback error: {e}")
+                                answer_callback(callback['id'], "Terjadi error, coba lagi")
             time.sleep(2)
         except KeyboardInterrupt:
             logger.info("👋 Bot stopped")
