@@ -115,7 +115,6 @@ def close_expired_signals():
         signal_id, asset, entry, signal_type, sl, tp1, created_at = signal
         created_time = datetime.strptime(created_at, '%Y-%m-%d %H:%M:%S')
         
-        # Cek expired (24 jam)
         if datetime.now() - created_time > timedelta(hours=24):
             c.execute('''
                 UPDATE signals 
@@ -180,7 +179,6 @@ def answer_callback(callback_id, text=""):
 # FUNGSI SUPPORT & RESISTANCE
 # ========================================
 def calculate_support_resistance(df):
-    """Hitung Support & Resistance berdasarkan pivot point"""
     try:
         high = df['High'].tail(20).max()
         low = df['Low'].tail(20).min()
