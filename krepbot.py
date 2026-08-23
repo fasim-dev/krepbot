@@ -1,6 +1,6 @@
 # ========================================
-# KRUSTY KRAB TRADING BOT - WEBHOOK VERSION
-# PASTI JALAN DI RAILWAY
+# KRUSTY KRAB TRADING BOT - RAILWAY VERSION
+# FILE: krepbot.py
 # ========================================
 
 import os
@@ -9,9 +9,13 @@ import pandas as pd
 import ta
 import requests
 import json
+import time
 from datetime import datetime
 import logging
 
+# ========================================
+# KONFIGURASI
+# ========================================
 TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 if not TOKEN:
     TOKEN = "8907169595:AAHCwqL7Rc5y5iy2TmOF4--rgbpHVyvjnVE"
@@ -26,45 +30,38 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 print("="*60)
-print("🤖 KRUSTY KRAB TRADING BOT - WEBHOOK")
+print("🤖 KRUSTY KRAB TRADING BOT - RAILWAY")
 print(f"🤖 Bot: @krepXau_bot")
+print(f"📱 Chat ID: {CHAT_ID}")
 print("="*60)
 
 # ========================================
 # FUNGSI KIRIM PESAN
 # ========================================
-def send_message(text, keyboard=None):
-    url = f"{BOT_URL}/sendMessage"
-    payload = {'chat_id': CHAT_ID, 'text': text, 'parse_mode': 'HTML'}
-    if keyboard:
-        payload['reply_markup'] = json.dumps({'inline_keyboard': keyboard})
+def send_message(text):
     try:
-        response = requests.post(url, json=payload, timeout=30)
-        return response.json()
+        response = requests.post(f"{BOT_URL}/sendMessage", 
+            json={'chat_id': CHAT_ID, 'text': text, 'parse_mode': 'HTML'}, timeout=30)
+        if response.status_code == 200:
+            logger.info("✅ Pesan terkirim!")
+            return True
+        else:
+            logger.error(f"❌ Gagal: {response.text}")
+            return False
     except Exception as e:
-        logger.error(f"Error: {e}")
-        return None
+        logger.error(f"❌ Error: {e}")
+        return False
 
 # ========================================
 # FUNGSI ANALISIS
 # ========================================
-def analyze_asset(ticker, name, timeframe="1h"):
+def analyze_asset(ticker, name):
     try:
-        tf_map = {
-            "5m": {"interval": "5m", "period": "1d"},
-            "15m": {"interval": "15m", "period": "5d"},
-            "1h": {"interval": "1h", "period": "1mo"},
-            "4h": {"interval": "1h", "period": "2mo"},
-        }
-        
-        interval = tf_map.get(timeframe, {"interval": "1h", "period": "1mo"})["interval"]
-        period = tf_map.get(timeframe, {"interval": "1h", "period": "1mo"})["period"]
-        
         if ticker == "XAUUSD=X":
             ticker = "GC=F"
         
         asset = yf.Ticker(ticker)
-        df = asset.history(period=period, interval=interval)
+        df = asset.history(period="1mo", interval="1d")
         
         if df.empty or len(df) < 10:
             return None
@@ -72,6 +69,7 @@ def analyze_asset(ticker, name, timeframe="1h"):
         df['RSI'] = ta.momentum.RSIIndicator(df['Close'], window=14).rsi()
         df['MACD'] = ta.trend.MACD(df['Close']).macd()
         df['MACD_signal'] = ta.trend.MACD(df['Close']).macd_signal()
+        df['SMA20'] = ta.trend.sma_indicator(df['Close'], window=20)
         df['SMA50'] = ta.trend.sma_indicator(df['Close'], window=50)
         df['ATR'] = ta.volatility.AverageTrueRange(df['High'], df['Low'], df['Close'], window=14).average_true_range()
         
@@ -142,81 +140,46 @@ def analyze_asset(ticker, name, timeframe="1h"):
             'tp1': tp1,
             'tp2': tp2,
             'rsi': last['RSI'],
-            'macd': last['MACD'],
-            'timeframe': timeframe
+            'macd': last['MACD']
         }
     except Exception as e:
         logger.error(f"Error {name}: {e}")
         return None
 
 # ========================================
-# WEBHOOK HANDLER
+# KIRIM SINYAL KE TELEGRAM
 # ========================================
-from flask import Flask, request, jsonify
-
-app = Flask(__name__)
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    try:
-        data = request.get_json()
-        logger.info(f"📥 Webhook received: {data}")
-        
-        if 'callback_query' in data:
-            callback = data['callback_query']
-            callback_id = callback['id']
-            message_id = callback['message']['message_id']
-            chat_id = str(callback['message']['chat']['id'])
-            
-            # Answer callback
-            requests.post(f"{BOT_URL}/answerCallbackQuery", 
-                         json={'callback_query_id': callback_id})
-            
-            if chat_id == CHAT_ID:
-                handle_callback(message_id, callback['data'])
-        
-        elif 'message' in data:
-            message = data['message']
-            chat_id = str(message['chat']['id'])
-            text = message.get('text', '')
-            
-            if chat_id == CHAT_ID:
-                if text == '/start':
-                    send_menu()
-                else:
-                    send_message("❓ Kirim /start untuk menu")
-        
-        return jsonify({'status': 'ok'})
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return jsonify({'status': 'error'}), 500
-
-def handle_callback(message_id, data):
-    global selected_timeframe
+def kirim_sinyal():
+    logger.info("📊 Mengirim sinyal...")
     
-    asset_map = {
-        'xau': {'ticker': 'XAUUSD=X', 'name': '🥇 XAU/USD'},
-        'btc': {'ticker': 'BTC-USD', 'name': '🪙 BTC/USD'},
-        'eth': {'ticker': 'ETH-USD', 'name': '⚡ ETH/USD'},
-        'eur': {'ticker': 'EURUSD=X', 'name': '💶 EUR/USD'},
-        'gbp': {'ticker': 'GBPUSD=X', 'name': '💷 GBP/USD'},
-        'usd': {'ticker': 'USDJPY=X', 'name': '💴 USD/JPY'},
-        'aud': {'ticker': 'AUDUSD=X', 'name': '🇦🇺 AUD/USD'},
-        'cad': {'ticker': 'USDCAD=X', 'name': '🇨🇦 USD/CAD'},
-    }
+    # Header
+    header = f"""
+╔═══════════════════════════════════════╗
+║   🏦  KRUSTY KRAB TRADING BOT         ║
+║   "Printing Money Since 2026"         ║
+╚═══════════════════════════════════════╝
+
+📊 <b>SINYAL TRADING</b>
+⏰ {datetime.now().strftime('%Y-%m-%d %H:%M')} WIB
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+    send_message(header)
+    time.sleep(1)
     
-    if data in asset_map:
-        asset = asset_map[data]
-        result = analyze_asset(asset['ticker'], asset['name'], selected_timeframe)
-        
+    assets = [
+        {"ticker": "XAUUSD=X", "name": "🥇 XAU/USD (Emas)"},
+        {"ticker": "BTC-USD", "name": "🪙 BTC/USD (Bitcoin)"},
+        {"ticker": "ETH-USD", "name": "⚡ ETH/USD (Ethereum)"},
+    ]
+    
+    for asset in assets:
+        result = analyze_asset(asset['ticker'], asset['name'])
         if result:
             alasan_text = "\n".join([f"   {a}" for a in result['alasan']])
             msg = f"""
 <b>{result['name']}</b>
 💰 Harga: <b>${result['price']:,.2f}</b>
-⏰ Timeframe: <b>{result['timeframe']}</b>
-
-🎯 <b>SINYAL: {result['sinyal']}</b>
+🎯 Sinyal: <b>{result['sinyal']}</b>
 📊 Konfidensi: {result['confidence']}%
 
 📌 Alasan:
@@ -227,49 +190,36 @@ def handle_callback(message_id, data):
 🎯 TP1: ${result['tp1']:,.2f}
 🎯 TP2: ${result['tp2']:,.2f}
 📊 RSI: {result['rsi']:.1f} | MACD: {result['macd']:.4f}
-━━━━━━━━━━━━━━━━━━━━━
-⚠️ Bukan nasihat keuangan
+━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-            keyboard = [[{"text": "🔙 Kembali", "callback_data": "menu"}]]
-            send_menu(message_id, msg, keyboard)
+            send_message(msg)
+            time.sleep(1)
         else:
-            send_menu(message_id, f"❌ Gagal analisis {asset['name']}")
-
-def send_menu(message_id=None, text=None, keyboard=None):
-    if text:
-        url = f"{BOT_URL}/editMessageText"
-        payload = {'chat_id': CHAT_ID, 'message_id': message_id, 'text': text, 'parse_mode': 'HTML'}
-        if keyboard:
-            payload['reply_markup'] = json.dumps({'inline_keyboard': keyboard})
-        requests.post(url, json=payload)
-        return
+            send_message(f"❌ Gagal analisis {asset['name']}")
     
-    keyboard = [
-        [{"text": "🥇 XAU/USD", "callback_data": "xau"}, {"text": "🪙 BTC/USD", "callback_data": "btc"}],
-        [{"text": "⚡ ETH/USD", "callback_data": "eth"}, {"text": "💶 EUR/USD", "callback_data": "eur"}],
-        [{"text": "💷 GBP/USD", "callback_data": "gbp"}, {"text": "💴 USD/JPY", "callback_data": "usd"}],
-        [{"text": "🇦🇺 AUD/USD", "callback_data": "aud"}, {"text": "🇨🇦 USD/CAD", "callback_data": "cad"}],
-    ]
-    msg = """
-🏦 <b>KRUSTY KRAB TRADING BOT</b>
-"Printing Money Since 2026"
+    footer = """
+⚠️ <b>DISCLAIMER:</b>
+Ini hanya analisis teknikal, BUKAN nasihat keuangan.
+Risiko sepenuhnya tanggung jawab Anda.
 
-📊 Pilih aset di bawah:
+💡 <b>Tips:</b>
+• Risk/reward minimal 1:2
+• Jangan risk > 2% per trade
 """
-    send_message(msg, keyboard)
+    send_message(footer)
+    logger.info("✅ Selesai!")
 
-selected_timeframe = "1h"
+# ========================================
+# MAIN
+# ========================================
+def main():
+    logger.info("🤖 Bot started...")
+    kirim_sinyal()
+    
+    # Loop setiap 4 jam
+    while True:
+        time.sleep(14400)  # 4 jam
+        kirim_sinyal()
 
 if __name__ == "__main__":
-    # Set webhook
-    webhook_url = os.environ.get('RAILWAY_PUBLIC_DOMAIN', '')
-    if webhook_url:
-        webhook_url = f"https://{webhook_url}/webhook"
-        requests.post(f"{BOT_URL}/setWebhook", json={'url': webhook_url})
-        logger.info(f"✅ Webhook set to: {webhook_url}")
-    
-    # Kirim menu pertama
-    send_menu()
-    
-    # Jalankan server
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    main()
